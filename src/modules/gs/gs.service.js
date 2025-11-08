@@ -15,7 +15,7 @@ export const getSubjectsAndTopics = async () => {
 // Find or create a chat session for a user and topic
 export const getChatSession = async (userId, topicId) => {
   let session = await prisma.chatSession.findUnique({
-    where: { topicId_userId: { userId, topicId } }, // Assumes @@unique([userId, topicId]) on ChatSession
+    where: { userId_topicId: { userId, topicId } }, // Assumes @@unique([userId, topicId]) on ChatSession
     include: { messages: { orderBy: { createdAt: 'asc' } } }
   });
 
