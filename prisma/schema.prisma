@@ -18,6 +18,7 @@ model User {
   name     String
   email    String   @unique
   password String
+  role      String   @default("USER")
   bookmarks Bookmark[]
 
   chatSessions ChatSession[]
@@ -36,14 +37,6 @@ model Bookmark {
   publishedAt DateTime?
   source      String?
   createdAt   DateTime @default(now())
-}
-
-model GeneralStudy {
-  id        Int      @id @default(autoincrement())
-  title     String
-  content   String   @db.Text
-  category  String   // e.g., "History", "Polity", "Current_Affairs"
-  createdAt DateTime @default(now())
 }
 
 // Top-level categories, e.g., "Indian History", "Geography"
