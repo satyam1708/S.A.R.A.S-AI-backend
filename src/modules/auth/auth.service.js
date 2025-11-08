@@ -1,4 +1,4 @@
-// Handles database logic
+// src/modules/auth/auth.service.js
 import prisma from '../../lib/prisma.js';
 import bcrypt from 'bcrypt';
 import jwt from 'jsonwebtoken';
@@ -23,7 +23,7 @@ export const register = async (name, email, password) => {
   
   const newUser = await prisma.user.create({
     data: { name, email, password: hashedPassword },
-    select: { id: true, name: true, email: true },
+    select: { id: true, name: true, email: true, role: true }, // <-- ADDED role
   });
   
   return newUser;
@@ -41,18 +41,36 @@ export const login = async (email, password) => {
   }
 
   const token = jwt.sign(
-    { id: user.id, name: user.name, email: user.email },
+    { 
+      id: user.id, 
+      name: user.name, 
+      email: user.email, 
+      role: user.role // <-- FIX 1: Add role to the JWT token
+    },
     JWT_SECRET,
     { expiresIn: '1h' }
   );
 
-  return { token, user: { id: user.id, name: user.name, email: user.email } };
+  return { 
+    token, 
+    user: { 
+      id: user.id, 
+      name: user.name, 
+      email: user.email, 
+      role: user.role // <-- FIX 2: Add role to the returned user object
+    } 
+  };
 };
 
 export const getProfileById = async (userId) => {
   const user = await prisma.user.findUnique({
     where: { id: userId },
-    select: { id: true, name: true, email: true },
+    select: { 
+      id: true, 
+      name: true, 
+      email: true, 
+      role: true // <-- FIX 3: Select the role from the database
+    },
   });
   if (!user) {
     throw new AppError('User not found', 404);
