@@ -1,14 +1,14 @@
-import prisma from '../../lib/prisma.js';
-import { getChatCompletion } from '../../services/aiService.js';
+import prisma from "../../lib/prisma.js";
+import { getChatCompletion } from "../../services/aiService.js";
 
 // Get all subjects and their nested topics for the UI
 export const getSubjectsAndTopics = async () => {
   return prisma.subject.findMany({
     include: {
       topics: {
-        select: { id: true, name: true }
-      }
-    }
+        select: { id: true, name: true },
+      },
+    },
   });
 };
 
@@ -16,13 +16,13 @@ export const getSubjectsAndTopics = async () => {
 export const getChatSession = async (userId, topicId) => {
   let session = await prisma.chatSession.findUnique({
     where: { userId_topicId: { userId, topicId } }, // Assumes @@unique([userId, topicId]) on ChatSession
-    include: { messages: { orderBy: { createdAt: 'asc' } } }
+    include: { messages: { orderBy: { createdAt: "asc" } } },
   });
 
   if (!session) {
     session = await prisma.chatSession.create({
       data: { userId, topicId },
-      include: { messages: true }
+      include: { messages: true },
     });
   }
   return session;
@@ -35,31 +35,35 @@ export const postMessage = async (userId, topicId, userMessage) => {
   // 1. Get the knowledge context for this topic
   const topic = await prisma.topic.findUnique({
     where: { id: topicId },
-    include: { content: true }
+    include: { content: true },
   });
 
-  if (!topic) throw new Error('Topic not found');
-  const context = topic.content.map(c => c.content).join('\n---\n');
+  if (!topic) throw new Error("Topic not found");
+  const context = topic.content.map((c) => c.content).join("\n---\n");
 
   // 2. Get chat history
-  const history = session.messages.map(msg => ({
+  const history = session.messages.map((msg) => ({
     role: msg.role,
-    content: msg.content
+    content: msg.content,
   }));
 
   // 3. Create the AI prompt
+  // 3. Create the AI prompt
   const systemMessage = `You are SarvaGyaan, an expert tutor for Indian competitive exams.
 You are teaching the user about "${topic.name}".
-You MUST answer questions using ONLY the following context.
-If the answer is not in the context, say "I'm sorry, that is outside my current knowledge for this topic."
+
+Your rules are:
+1.  For any question directly related to "${topic.name}", you MUST answer using ONLY the provided CONTEXT.
+2.  If the answer to a topical question is not in the CONTEXT, you must say: "I'm sorry, that is outside my current knowledge for this topic."
+3.  For general chat, small talk (like "Hii", "ok thanks"), or meta-questions (like "can you help me revise?" or "how much have I learned?"), you can answer using your general knowledge.
 
 CONTEXT:
 ${context}`;
 
   const messages = [
-    { role: 'system', content: systemMessage },
+    { role: "system", content: systemMessage },
     ...history,
-    { role: 'user', content: userMessage }
+    { role: "user", content: userMessage },
   ];
 
   // 4. Get AI response
@@ -68,11 +72,11 @@ ${context}`;
   // 5. Save messages to DB (in a transaction)
   await prisma.$transaction([
     prisma.chatMessage.create({
-      data: { sessionId: session.id, role: 'user', content: userMessage }
+      data: { sessionId: session.id, role: "user", content: userMessage },
     }),
     prisma.chatMessage.create({
-      data: { sessionId: session.id, role: 'assistant', content: aiResponse }
-    })
+      data: { sessionId: session.id, role: "assistant", content: aiResponse },
+    }),
   ]);
 
   return aiResponse;
@@ -83,7 +87,7 @@ export const markTopicAsLearned = async (userId, topicId) => {
   return prisma.learningHistory.upsert({
     where: { userId_topicId: { userId, topicId } },
     update: {},
-    create: { userId, topicId }
+    create: { userId, topicId },
   });
 };
 
@@ -91,7 +95,7 @@ export const markTopicAsLearned = async (userId, topicId) => {
 export const getRevisionForUser = async (userId) => {
   const learnedTopics = await prisma.topic.findMany({
     where: { learnedBy: { some: { userId } } },
-    include: { content: true }
+    include: { content: true },
   });
 
   if (learnedTopics.length === 0) {
@@ -99,17 +103,20 @@ export const getRevisionForUser = async (userId) => {
   }
 
   const context = learnedTopics
-    .map(topic => `Topic: ${topic.name}\n${topic.content.map(c => c.content).join('\n')}`)
-    .join('\n---\n');
+    .map(
+      (topic) =>
+        `Topic: ${topic.name}\n${topic.content.map((c) => c.content).join("\n")}`
+    )
+    .join("\n---\n");
 
   const messages = [
     {
-      role: 'system',
+      role: "system",
       content: `You are SarvaGyaan, a revision tutor. The user wants to revise topics they have already learned.
 Based on the following context, ask the user ONE concise question to test their knowledge.
 CONTEXT:
-${context}`
-    }
+${context}`,
+    },
   ];
 
   const revisionQuestion = await getChatCompletion(messages);
