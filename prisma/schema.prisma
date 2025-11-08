@@ -19,6 +19,10 @@ model User {
   email    String   @unique
   password String
   bookmarks Bookmark[]
+
+  chatSessions ChatSession[]
+
+  learningHistories LearningHistory[]
 }
 
 model Bookmark {
@@ -40,4 +44,62 @@ model GeneralStudy {
   content   String   @db.Text
   category  String   // e.g., "History", "Polity", "Current_Affairs"
   createdAt DateTime @default(now())
+}
+
+// Top-level categories, e.g., "Indian History", "Geography"
+model Subject {
+  id     Int     @id @default(autoincrement())
+  name   String  @unique
+  topics Topic[]
+}
+
+// Sub-categories, e.g., "Mughal Empire", "Rivers of India"
+model Topic {
+  id          Int            @id @default(autoincrement())
+  name        String
+  subject     Subject        @relation(fields: [subjectId], references: [id])
+  subjectId   Int
+  content     ContentBlock[]
+  learnedBy   LearningHistory[]
+  chatSession ChatSession?
+}
+
+// The raw knowledge snippets for the AI to learn from
+model ContentBlock {
+  id      Int    @id @default(autoincrement())
+  content String @db.Text
+  topic   Topic  @relation(fields: [topicId], references: [id])
+  topicId Int
+  // We can add a 'vector' field here later for pgvector search
+}
+
+// Tracks what a user has "learned" for revision
+model LearningHistory {
+  id     Int    @id @default(autoincrement())
+  user   User   @relation(fields: [userId], references: [id])
+  userId Int
+  topic  Topic  @relation(fields: [topicId], references: [id])
+  topicId Int
+  
+  @@unique([userId, topicId]) // A user can only learn a topic once
+}
+
+// --- Chat System ---
+
+model ChatSession {
+  id       Int           @id @default(autoincrement())
+  user     User          @relation(fields: [userId], references: [id])
+  userId   Int           @unique // One chat session per user for now
+  topic    Topic         @relation(fields: [topicId], references: [id])
+  topicId  Int           @unique // One chat session per topic
+  messages ChatMessage[]
+}
+
+model ChatMessage {
+  id        Int         @id @default(autoincrement())
+  session   ChatSession @relation(fields: [sessionId], references: [id])
+  sessionId Int
+  role      String      // "user" or "assistant"
+  content   String      @db.Text
+  createdAt DateTime    @default(now())
 }

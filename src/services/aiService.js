@@ -47,3 +47,22 @@ export const summarizeArticle = async (articleContent) => {
     throw new Error("Failed to get AI summary.");
   }
 };
+
+
+// --- NEW FUNCTION for the GS Tutor ---
+export const getChatCompletion = async (messages) => {
+  if (!client) {
+    throw new Error("AI client is not initialized.");
+  }
+
+  try {
+    const result = await client.chat.completions.create({
+      messages: messages,
+      max_tokens: 1000,
+    });
+    return result.choices[0].message.content;
+  } catch (error) {
+    console.error("Error in getChatCompletion:", error);
+    throw new Error("Failed to get AI chat completion.");
+  }
+};

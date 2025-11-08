@@ -6,7 +6,7 @@ import axiosRetry from 'axios-retry';
 import bcrypt from 'bcrypt';
 import jwt from 'jsonwebtoken';
 import { PrismaClient } from '@prisma/client';
-import { summarizeArticle } from './aiService.js';
+import { summarizeArticle } from './src/services/aiService.js';
 
 dotenv.config();
 
