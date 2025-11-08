@@ -6,6 +6,7 @@ import axiosRetry from 'axios-retry';
 import bcrypt from 'bcrypt';
 import jwt from 'jsonwebtoken';
 import { PrismaClient } from '@prisma/client';
+import { summarizeArticle } from './aiService.js';
 
 dotenv.config();
 
@@ -27,10 +28,20 @@ axiosRetry(axios, {
   retryCondition: (err) =>
     axiosRetry.isNetworkOrIdempotentRequestError(err) || err.code === 'ETIMEDOUT',
 });
-
-// Middleware
-app.use(cors());
 app.use(express.json());
+
+const allowedOrigins = [
+  'http://localhost:5173',
+  'https://thesarvanews.vercel.app'
+];
+
+const corsOptions = {
+  origin: allowedOrigins, // <-- Let the 'cors' package handle the matching
+  credentials: true,
+  optionsSuccessStatus: 200
+};
+// Middleware
+app.use(cors(corsOptions));
 
 // JWT Middleware
 const authenticateToken = (req, res, next) => {
@@ -45,6 +56,15 @@ const authenticateToken = (req, res, next) => {
   });
 };
 
+// Health check route
+app.get('/', (req, res) => {
+  res.status(200).json({
+    status: 'ok',
+    message: 'MitrLok backend is running fine 🚀',
+    uptime: process.uptime(),
+    timestamp: Date.now()
+  });
+});
 // ========== DEBUG /api/ping ROUTE ==========
 app.get('/api/ping', async (req, res) => {
   try {
@@ -260,6 +280,50 @@ app.get('/api/image-proxy', async (req, res) => {
   }
 });
 
+app.post('/api/news/summarize', authenticateToken, async (req, res) => {
+  const { content } = req.body;
+  if (!content) {
+    return res.status(400).json({ message: 'Article content is required' });
+  }
+
+  try {
+    const summary = await summarizeArticle(content);
+    res.json({ summary });
+  } catch (error) {
+    console.error('Summary error:', error);
+    res.status(500).json({ message: error.message || 'Server error' });
+  }
+});
+
+// GET all GS articles
+app.get('/api/gs', async (req, res) => {
+  try {
+    const articles = await prisma.generalStudy.findMany({
+      orderBy: { createdAt: 'desc' },
+    });
+    res.json(articles);
+  } catch (error) {
+    res.status(500).json({ message: 'Server error' });
+  }
+});
+
+// POST new GS article (protected)
+app.post('/api/gs', authenticateToken, async (req, res) => {
+  // You might want to add admin-level permissions here later
+  const { title, content, category } = req.body;
+  if (!title || !content || !category) {
+    return res.status(400).json({ message: 'Title, content, and category are required' });
+  }
+
+  try {
+    const newArticle = await prisma.generalStudy.create({
+      data: { title, content, category },
+    });
+    res.status(201).json(newArticle);
+  } catch (error) {
+    res.status(500).json({ message: 'Server error' });
+  }
+});
 // ========== START SERVER ==========
 
 app.listen(PORT, () => {
