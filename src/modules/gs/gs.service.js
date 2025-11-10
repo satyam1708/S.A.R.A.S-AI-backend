@@ -3,7 +3,8 @@ import { getChatCompletion } from '../../services/aiService.js';
 
 // Get all subjects and their nested topics for the UI
 export const getSubjectsAndTopics = async () => {
-  return prisma.gsSubject.findMany({ // Corrected model name to GsSubject
+  // FIX: Model is GsSubject, not Subject
+  return prisma.gsSubject.findMany({ 
     include: {
       topics: {
         select: { id: true, name: true },
@@ -14,7 +15,7 @@ export const getSubjectsAndTopics = async () => {
 };
 
 /**
- * --- NEW (Replaces getChatSession) ---
+ * --- CORRECTED (Replaces getChatSession) ---
  * Gets the chat history for a specific user and topic.
  */
 export const getChatHistory = async (userId, topicId) => {
@@ -35,13 +36,16 @@ export const getChatHistory = async (userId, topicId) => {
 
   // Return all messages for that topic
   return prisma.gsChatMessage.findMany({
-    where: { topicId: topicId },
+    where: { 
+      topicId: topicId,
+      userId: userId // Ensure user can only see their own chat
+    },
     orderBy: { createdAt: 'asc' },
   });
 };
 
 /**
- * --- REWRITTEN (Replaces postMessage) ---
+ * --- CORRECTED (Replaces postMessage) ---
  * Posts a new message and gets an AI response, based on the new schema.
  */
 export const postNewMessage = async (userId, topicId, userMessage) => {
@@ -66,7 +70,10 @@ export const postNewMessage = async (userId, topicId, userMessage) => {
 
   // 2. Get chat history
   const history = await prisma.gsChatMessage.findMany({
-    where: { topicId: topicId },
+    where: { 
+      topicId: topicId,
+      userId: userId
+    },
     orderBy: { createdAt: 'asc' },
     take: 10, // Get last 10 messages for context
   });
@@ -93,13 +100,14 @@ ${context}`;
   const aiResponse = await getChatCompletion(messages);
 
   // 5. Save messages to DB (in a transaction)
+  // FIX: Saving GsChatMessage with topicId and userId, not sessionId
   await prisma.$transaction([
     prisma.gsChatMessage.create({
       data: {
         role: 'user',
         content: userMessage,
         topicId: topicId,
-        // No sessionId!
+        userId: userId,
       },
     }),
     prisma.gsChatMessage.create({
@@ -107,7 +115,7 @@ ${context}`;
         role: 'assistant',
         content: aiResponse,
         topicId: topicId,
-        // No sessionId!
+        userId: userId,
       },
     }),
   ]);
@@ -127,7 +135,8 @@ export const markTopicAsLearned = async (userId, topicId) => {
 
   if (!topic) throw new Error('Topic not found');
 
-  return prisma.gsLearningHistory.upsert({
+  // FIX: Model is GsLearningHistory, not LearningHistory
+  return prisma.gsLearningHistory.upsert({ 
     where: { userId_topicId: { userId, topicId } },
     update: { hasLearned: true },
     create: { userId, topicId, hasLearned: true },
@@ -213,6 +222,7 @@ export const createTopicFromContext = async (userId, context) => {
       role: 'assistant',
       content: initialMessage,
       topicId: newTopic.id, // Link to the new topic
+      userId: userId, // FIX: Added the required userId
     },
   });
 
