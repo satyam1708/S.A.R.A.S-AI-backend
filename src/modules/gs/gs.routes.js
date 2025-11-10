@@ -1,22 +1,30 @@
 import { Router } from 'express';
-import * as GsController from './gs.controller.js';
-import { authenticateToken } from '../../middleware/auth.middleware.js';
+import {
+  getSubjects,
+  postMessage,           // This now matches the controller
+  getChatHistory,        // This now matches the controller
+  markTopicAsLearned,
+  getRevision,
+  createChatFromContext,
+} from './gs.controller.js';
+import { authMiddleware } from '../../middleware/auth.middleware.js';
+// Removed unused adminMiddleware import
 
-const router = Router();
+const gsRouter = Router();
 
-// Get all subjects and their topics for the UI
-router.get('/subjects', GsController.getSubjects);
+// --- Public Routes ---
+gsRouter.get('/subjects', getSubjects);
 
-// Get chat history for a specific topic
-router.get('/chat/:topicId', authenticateToken, GsController.getChat);
+// --- User Protected Routes ---
+gsRouter.get('/chat/:topicId', authMiddleware, getChatHistory);
+gsRouter.post('/chat/:topicId', authMiddleware, postMessage);
+gsRouter.post('/learn/:topicId', authMiddleware, markTopicAsLearned);
+gsRouter.get('/revise', authMiddleware, getRevision);
 
-// Post a new message to the chat
-router.post('/chat/:topicId', authenticateToken, GsController.postChat);
+// This route will create a new topic from a news article's context
+gsRouter.post('/chat/from-context', authMiddleware, createChatFromContext);
 
-// Mark a topic as "learned"
-router.post('/learn/:topicId', authenticateToken, GsController.markAsLearned);
+// --- Admin Routes ---
+// (No changes to admin routes)
 
-// Get a revision prompt
-router.get('/revise', authenticateToken, GsController.getRevision);
-
-export default router;
+export default gsRouter;

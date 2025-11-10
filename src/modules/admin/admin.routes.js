@@ -1,13 +1,13 @@
 // src/modules/admin/admin.routes.js
 import { Router } from 'express';
 import * as AdminController from './admin.controller.js';
-import { authenticateToken } from '../../middleware/auth.middleware.js';
-import { adminOnly } from '../../middleware/admin.middleware.js';
+import { authMiddleware } from '../../middleware/auth.middleware.js';
+import { adminMiddleware } from '../../middleware/admin.middleware.js';
 
 const router = Router();
 
 // All admin routes are protected by auth and admin role
-router.use(authenticateToken, adminOnly);
+router.use(authMiddleware, adminMiddleware);
 
 // Subject routes
 router.post('/subjects', AdminController.createSubject);
