@@ -67,6 +67,24 @@ export const getChatCompletion = async (messages) => {
   }
 };
 
+export const getChatCompletionStream = async (messages) => {
+  if (!client) {
+    throw new Error("AI client is not initialized.");
+  }
+
+  try {
+    const result = await client.chat.completions.create({
+      messages: messages,
+      max_tokens: 1000,
+      stream: true, // <-- This is the magic flag!
+    });
+    return result; // Return the stream iterator
+  } catch (error) {
+    console.error("Error in getChatCompletionStream:", error);
+    throw new Error("Failed to get AI chat stream.");
+  }
+};
+
 
 export const generateNewsBroadcast = async (articlesContent, category, messages, language = 'en-US') => {
   if (!client) {

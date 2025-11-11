@@ -1,5 +1,5 @@
 import prisma from '../../lib/prisma.js';
-import { getChatCompletion } from '../../services/aiService.js';
+import { getChatCompletion, getChatCompletionStream } from '../../services/aiService.js';
 
 // Get all subjects and their nested topics for the UI
 export const getSubjectsAndTopics = async () => {
@@ -127,6 +127,76 @@ ${context}`;
   ]);
 
   return aiResponse;
+};
+
+export const streamNewMessage = async (userId, topicId, userMessage) => {
+  // 1. Get the knowledge context for this topic
+  const topic = await prisma.topic.findFirst({
+    where: { id: topicId },
+    include: { content: true },
+  });
+
+  if (!topic) throw new Error('Topic not found');
+
+  // 2. Find or create the ChatSession for this user and topic
+  const session = await prisma.chatSession.upsert({
+    where: { userId_topicId: { userId: userId, topicId: topicId } },
+    create: { userId: userId, topicId: topicId },
+    update: {},
+  });
+
+  const context =
+    topic.content.length > 0
+      ? topic.content.map((c) => c.content).join('\n---\n')
+      : 'No specific context provided for this topic. Answer based on general knowledge.';
+
+  // 3. Get chat history (now from the session)
+  const history = await prisma.chatMessage.findMany({
+    where: { sessionId: session.id },
+    orderBy: { createdAt: 'asc' },
+    take: 10,
+  });
+
+  // 4. Create the AI prompt
+  const systemMessage = `You are SarvaGyaan, an expert tutor.
+You are teaching the user about "${topic.name}".
+You MUST answer using ONLY the provided CONTEXT.
+If the answer is not in the CONTEXT, say: "I'm sorry, that is outside my current knowledge for this topic."
+
+CONTEXT:
+${context}`;
+
+  const messages = [
+    { role: 'system', content: systemMessage },
+    ...history.map((msg) => ({ role: msg.role, content: msg.content })),
+    { role: 'user', content: userMessage },
+  ];
+  
+  // 5. Save the USER'S message to the DB first
+  await prisma.chatMessage.create({
+    data: {
+      role: 'user',
+      content: userMessage,
+      sessionId: session.id,
+    },
+  });
+
+  // 6. Get the AI response STREAM
+  const stream = await getChatCompletionStream(messages);
+
+  // 7. Return both the stream and the session ID
+  return { stream, sessionId: session.id };
+};
+
+// +++ 4. ADD THIS NEW FUNCTION to save the AI response after streaming +++
+export const saveAiResponse = async (sessionId, aiMessage) => {
+  return prisma.chatMessage.create({
+    data: {
+      role: 'assistant',
+      content: aiMessage,
+      sessionId: sessionId,
+    },
+  });
 };
 
 // Mark a topic as learned
