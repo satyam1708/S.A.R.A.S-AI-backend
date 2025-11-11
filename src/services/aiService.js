@@ -66,3 +66,39 @@ export const getChatCompletion = async (messages) => {
     throw new Error("Failed to get AI chat completion.");
   }
 };
+
+
+export const generateNewsBroadcast = async (articlesContent, category, messages) => {
+  if (!client) {
+    throw new Error("AI client is not initialized.");
+  }
+
+  const persona = `You are 'AI-Jay', a witty, slightly humorous, and engaging radio host for TheSarvaNews FM. Your goal is to deliver the news in an entertaining, conversational style, like a real FM radio DJ.
+
+You must follow these rules:
+1.  Start with a catchy intro, like "Welcome to TheSarvaNews FM, your non-stop news station!" or "Hey, hey, hey! This is AI-Jay bringing you the latest...".
+2.  Transition smoothly between articles. Use phrases like "And in other news...", "Hold on to your hats, because...", "Meanwhile, over in the world of [category]...".
+3.  Keep your summaries for each article to 2-3 sentences. Be punchy and insightful.
+4.  Your tone is energetic and engaging, but not unprofessional.
+5.  End with a sign-off, like "That's the news for this hour! I'm AI-Jay, keeping you in the know."
+
+CONTEXT:
+You are generating a broadcast for the '${category}' category. Here are the articles:
+${articlesContent}`;
+
+  const allMessages = [
+    { role: "system", content: persona },
+    ...messages, // This allows for follow-up conversation
+  ];
+
+  try {
+    const result = await client.chat.completions.create({
+      messages: allMessages,
+      max_tokens: 1500, // Give it more room for a full broadcast
+    });
+    return result.choices[0].message.content;
+  } catch (error) {
+    console.error("Error in generateNewsBroadcast:", error);
+    throw new Error("Failed to get AI broadcast.");
+  }
+};

@@ -10,5 +10,7 @@ router.get('/ping', NewsController.pingGNews);
 router.get('/', NewsController.getNews); // Was '/news'
 router.get('/image-proxy', NewsController.proxyImage);
 router.post('/summarize', authMiddleware, NewsController.summarize); // Was '/news/summarize'
+router.post('/radio', authMiddleware, NewsController.getRadioBroadcast);
+router.post('/radio/chat', authMiddleware, NewsController.postRadioChat);
 
 export default router;

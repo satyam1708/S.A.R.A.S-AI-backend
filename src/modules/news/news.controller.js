@@ -80,3 +80,30 @@ export const summarize = async (req, res) => {
     res.status(500).json({ message: error.message || 'Server error' });
   }
 };
+
+export const getRadioBroadcast = async (req, res) => {
+  try {
+    const { category = 'general' } = req.body;
+    const { script, articles } = await NewsService.getRadioBroadcast(category);
+    res.json({ script, articles });
+  } catch (error) {
+    console.error('Radio broadcast error:', error);
+    res.status(error.statusCode || 500).json({ message: error.message || 'Server error' });
+  }
+};
+
+// --- NEW CONTROLLER for AI Radio Chat ---
+export const postRadioChat = async (req, res) => {
+  try {
+    const { userMessage, broadcastScript, chatHistory } = req.body;
+    if (!userMessage || !broadcastScript || !chatHistory) {
+      return res.status(400).json({ message: 'Missing message, script, or history' });
+    }
+
+    const response = await NewsService.getRadioChatResponse(userMessage, broadcastScript, chatHistory);
+    res.json({ role: 'assistant', content: response });
+  } catch (error) {
+    console.error('Radio chat error:', error);
+    res.status(500).json({ message: error.message || 'Server error' });
+  }
+};

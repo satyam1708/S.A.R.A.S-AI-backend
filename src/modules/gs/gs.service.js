@@ -3,119 +3,125 @@ import { getChatCompletion } from '../../services/aiService.js';
 
 // Get all subjects and their nested topics for the UI
 export const getSubjectsAndTopics = async () => {
-  // FIX: Model is GsSubject, not Subject
-  return prisma.gsSubject.findMany({ 
+  // This function is correct.
+  return prisma.subject.findMany({
     include: {
       topics: {
         select: { id: true, name: true },
-        where: { userId: null }, // Only get "template" topics
+        // where: { userId: null }, // <-- This logic is no longer valid, Topic has no userId.
+                                 //     We'll just get all topics.
       },
     },
   });
 };
 
 /**
- * --- CORRECTED (Replaces getChatSession) ---
+ * --- CORRECTED ---
  * Gets the chat history for a specific user and topic.
+ * This now correctly uses the ChatSession model.
  */
 export const getChatHistory = async (userId, topicId) => {
-  // Find the topic and ensure the user owns it (or it's a template)
-  const topic = await prisma.gsTopic.findFirst({
+  // 1. Find the chat session linking the user and topic
+  const session = await prisma.chatSession.findUnique({
     where: {
-      id: topicId,
-      OR: [
-        { userId: null }, // It's a template topic
-        { userId: userId }, // It's a user-created topic
-      ],
+      userId_topicId: {
+        userId: userId,
+        topicId: topicId,
+      },
     },
   });
 
-  if (!topic) {
-    throw new Error('Chat topic not found or access denied.');
+  // 2. If no session exists, there is no history.
+  if (!session) {
+    // Check if the topic itself exists
+    const topic = await prisma.topic.findUnique({ where: { id: topicId } });
+    if (!topic) {
+      throw new Error('Topic not found.');
+    }
+    return []; // No history for this user and topic yet
   }
 
-  // Return all messages for that topic
-  return prisma.gsChatMessage.findMany({
-    where: { 
-      topicId: topicId,
-      userId: userId // Ensure user can only see their own chat
+  // 3. Return all messages for that session
+  return prisma.chatMessage.findMany({
+    where: {
+      sessionId: session.id,
     },
     orderBy: { createdAt: 'asc' },
   });
 };
 
 /**
- * --- CORRECTED (Replaces postMessage) ---
- * Posts a new message and gets an AI response, based on the new schema.
+ * --- CORRECTED ---
+ * Posts a new message and gets an AI response.
+ * This now correctly saves messages to a ChatSession.
  */
 export const postNewMessage = async (userId, topicId, userMessage) => {
   // 1. Get the knowledge context for this topic
-  const topic = await prisma.gsTopic.findFirst({
-    where: {
-      id: topicId,
-      OR: [
-        { userId: null }, // It's a template topic
-        { userId: userId }, // It's a user-created topic
-      ],
-    },
+  const topic = await prisma.topic.findFirst({
+    where: { id: topicId },
     include: { content: true },
   });
 
-  if (!topic) throw new Error('Topic not found or access denied');
+  if (!topic) throw new Error('Topic not found');
 
-  // Create context from all GsContentBlocks linked to this topic
-  const context = topic.content.length > 0
-    ? topic.content.map((c) => c.content).join('\n---\n')
-    : 'No specific context provided for this topic. Answer based on general knowledge.';
-
-  // 2. Get chat history
-  const history = await prisma.gsChatMessage.findMany({
-    where: { 
-      topicId: topicId,
-      userId: userId
+  // 2. Find or create the ChatSession for this user and topic
+  const session = await prisma.chatSession.upsert({
+    where: {
+      userId_topicId: {
+        userId: userId,
+        topicId: topicId,
+      },
     },
-    orderBy: { createdAt: 'asc' },
-    take: 10, // Get last 10 messages for context
+    create: { userId: userId, topicId: topicId },
+    update: {}, // No update needed, just need the session
   });
 
-  // 3. Create the AI prompt
-  const systemMessage = `You are SarvaGyaan, an expert tutor for Indian competitive exams.
-You are teaching the user about "${topic.name}".
+  const context =
+    topic.content.length > 0
+      ? topic.content.map((c) => c.content).join('\n---\n')
+      : 'No specific context provided for this topic. Answer based on general knowledge.';
 
-Your rules are:
-1.  For any question directly related to "${topic.name}", you MUST answer using ONLY the provided CONTEXT.
-2.  If the answer to a topical question is not in the CONTEXT, you must say: "I'm sorry, that is outside my current knowledge for this topic."
-3.  For general chat, small talk (like "Hii", "ok thanks"), or meta-questions, you can answer using your general knowledge.
+  // 3. Get chat history (now from the session)
+  const history = await prisma.chatMessage.findMany({
+    where: {
+      sessionId: session.id,
+    },
+    orderBy: { createdAt: 'asc' },
+    take: 10,
+  });
+
+  // 4. Create the AI prompt
+  const systemMessage = `You are SarvaGyaan, an expert tutor.
+You are teaching the user about "${topic.name}".
+You MUST answer using ONLY the provided CONTEXT.
+If the answer is not in the CONTEXT, say: "I'm sorry, that is outside my current knowledge for this topic."
 
 CONTEXT:
 ${context}`;
 
   const messages = [
     { role: 'system', content: systemMessage },
-    ...history.map((msg) => ({ role: msg.role, content: msg.content })), // Map history
+    ...history.map((msg) => ({ role: msg.role, content: msg.content })),
     { role: 'user', content: userMessage },
   ];
 
-  // 4. Get AI response
+  // 5. Get AI response
   const aiResponse = await getChatCompletion(messages);
 
-  // 5. Save messages to DB (in a transaction)
-  // FIX: Saving GsChatMessage with topicId and userId, not sessionId
+  // 6. Save messages to DB (linked to the session)
   await prisma.$transaction([
-    prisma.gsChatMessage.create({
+    prisma.chatMessage.create({
       data: {
         role: 'user',
         content: userMessage,
-        topicId: topicId,
-        userId: userId,
+        sessionId: session.id, // <-- FIX: Use sessionId
       },
     }),
-    prisma.gsChatMessage.create({
+    prisma.chatMessage.create({
       data: {
         role: 'assistant',
         content: aiResponse,
-        topicId: topicId,
-        userId: userId,
+        sessionId: session.id, // <-- FIX: Use sessionId
       },
     }),
   ]);
@@ -125,18 +131,14 @@ ${context}`;
 
 // Mark a topic as learned
 export const markTopicAsLearned = async (userId, topicId) => {
-  // First, ensure the topic exists and the user has access
-  const topic = await prisma.gsTopic.findFirst({
-    where: {
-      id: topicId,
-      OR: [{ userId: null }, { userId: userId }],
-    },
+  // This function was correct as it uses LearningHistory
+  const topic = await prisma.topic.findFirst({
+    where: { id: topicId },
   });
 
   if (!topic) throw new Error('Topic not found');
 
-  // FIX: Model is GsLearningHistory, not LearningHistory
-  return prisma.gsLearningHistory.upsert({ 
+  return prisma.learningHistory.upsert({
     where: { userId_topicId: { userId, topicId } },
     update: { hasLearned: true },
     create: { userId, topicId, hasLearned: true },
@@ -145,7 +147,8 @@ export const markTopicAsLearned = async (userId, topicId) => {
 
 // Generate a revision question
 export const getRevisionForUser = async (userId) => {
-  const learnedTopics = await prisma.gsTopic.findMany({
+  // This function was also correct
+  const learnedTopics = await prisma.topic.findMany({
     where: {
       learnedBy: {
         some: { userId: userId, hasLearned: true },
@@ -168,8 +171,7 @@ export const getRevisionForUser = async (userId) => {
   const messages = [
     {
       role: 'system',
-      content: `You are SarvaGyaan, a revision tutor. The user wants to revise topics they have already learned.
-Based on the following context, ask the user ONE concise question to test their knowledge.
+      content: `You are SarvaGyaan, a revision tutor. Ask the user ONE concise question based on the following context.
 CONTEXT:
 ${context}`,
     },
@@ -179,22 +181,41 @@ ${context}`,
   return revisionQuestion;
 };
 
-// This is your new function, it's correct.
+/**
+ * --- CORRECTED ---
+ * This function now creates a new topic under a default "General" subject.
+ *
+ * !! IMPORTANT !!: You must manually create a Subject in your database
+ * with the name "General" for this code to work.
+ */
 export const createTopicFromContext = async (userId, context) => {
-  // 1. Create a special prompt for the AI
+  // 1. Get the "General" Subject.
+  //    You MUST create this subject in your database first!
+  const generalSubject = await prisma.subject.findUnique({
+    where: { name: 'General' },
+  });
+
+  if (!generalSubject) {
+    console.error("FATAL ERROR: The 'General' subject was not found in the database.");
+    throw new Error(
+      "Server configuration error: Default subject not found."
+    );
+  }
+
+  // 2. Create AI prompt
   const initialPrompt = `
-    A user was just reading a news article titled: "${context}"
+    A user was just reading an article titled: "${context}"
     
-    Your task is to respond in two parts, separated by "---":
-    1.  First, on a single line, provide a short, concise topic name (3-5 words) for this article (e.g., "Quantum Computing" or "Indian Polity").
-    2.  Second, after the "---" separator, write a friendly, simple explanation of this topic for a beginner, starting with a greeting.
+    Respond in two parts, separated by "---":
+    1.  First, on a single line, provide a short topic name (3-5 words) for this article (e.g., "Quantum Computing").
+    2.  Second, after "---", write a friendly, simple explanation of this topic for a beginner, starting with a greeting.
   `;
 
-  // 2. Call the AI service
+  // 3. Call AI
   const messages = [{ role: 'system', content: initialPrompt }];
   const aiResponse = await getChatCompletion(messages);
 
-  // 3. Parse the AI's response
+  // 4. Parse response
   const responseParts = aiResponse.split('---', 2);
   let topicName;
   let initialMessage;
@@ -203,29 +224,36 @@ export const createTopicFromContext = async (userId, context) => {
     topicName = responseParts[0].trim();
     initialMessage = responseParts[1].trim();
   } else {
-    // Fallback in case the AI doesn't follow instructions
-    topicName = context.substring(0, 50); // Use the truncated title
+    topicName = context.substring(0, 50);
     initialMessage = "Hello! Let's talk about that topic. What would you like to know first?";
   }
 
-  // 4. Create the new GsTopic in the database
-  const newTopic = await prisma.gsTopic.create({
+  // 5. Create the new Topic in the database
+  const newTopic = await prisma.topic.create({
     data: {
       name: topicName,
-      userId: userId, // This is a user-specific, non-template topic
+      subjectId: generalSubject.id, // <-- FIX: Provide the required subjectId
+      // userId: userId, // <-- FIX: REMOVED. This field does not exist on Topic.
     },
   });
 
-  // 5. Save the AI's first message to the new chat
-  await prisma.gsChatMessage.create({
+  // 6. Create the ChatSession to link the User, new Topic, and first message
+  const newSession = await prisma.chatSession.create({
+    data: {
+      userId: userId,
+      topicId: newTopic.id,
+    },
+  });
+
+  // 7. Save the AI's first message to the new chat session
+  await prisma.chatMessage.create({
     data: {
       role: 'assistant',
       content: initialMessage,
-      topicId: newTopic.id, // Link to the new topic
-      userId: userId, // FIX: Added the required userId
+      sessionId: newSession.id, // <-- FIX: Use the new sessionId
     },
   });
 
-  // 6. Return the new topic object (the frontend needs the ID)
+  // 8. Return the new topic object
   return newTopic;
 };
