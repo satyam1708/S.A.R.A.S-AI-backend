@@ -83,8 +83,8 @@ export const summarize = async (req, res) => {
 
 export const getRadioBroadcast = async (req, res) => {
   try {
-    const { category = 'general' } = req.body;
-    const { script, articles } = await NewsService.getRadioBroadcast(category);
+    const { category = 'general', language = 'en-US' } = req.body; // <-- GET LANGUAGE
+    const { script, articles } = await NewsService.getRadioBroadcast(category, language); // <-- PASS IT
     res.json({ script, articles });
   } catch (error) {
     console.error('Radio broadcast error:', error);
@@ -92,15 +92,15 @@ export const getRadioBroadcast = async (req, res) => {
   }
 };
 
-// --- NEW CONTROLLER for AI Radio Chat ---
+// --- UPDATE THIS CONTROLLER ---
 export const postRadioChat = async (req, res) => {
   try {
-    const { userMessage, broadcastScript, chatHistory } = req.body;
+    const { userMessage, broadcastScript, chatHistory, language = 'en-US' } = req.body; // <-- GET LANGUAGE
     if (!userMessage || !broadcastScript || !chatHistory) {
       return res.status(400).json({ message: 'Missing message, script, or history' });
     }
 
-    const response = await NewsService.getRadioChatResponse(userMessage, broadcastScript, chatHistory);
+    const response = await NewsService.getRadioChatResponse(userMessage, broadcastScript, chatHistory, language); // <-- PASS IT
     res.json({ role: 'assistant', content: response });
   } catch (error) {
     console.error('Radio chat error:', error);
