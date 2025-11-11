@@ -217,20 +217,27 @@ export const markTopicAsLearned = async (userId, topicId) => {
 
 // Generate a revision question
 export const getRevisionForUser = async (userId) => {
-  // This function was also correct
+  // 1. Find all topics the user has learned
   const learnedTopics = await prisma.topic.findMany({
     where: {
-      learnedBy: {
-        some: { userId: userId, hasLearned: true },
+      learnedBy: { // This references the relation on the Topic model
+        some: {
+          userId: userId, // Find topics where at least one LearningHistory record...
+        },               // ...matches this userId
       },
     },
-    include: { content: true },
+    include: {
+      content: { // Include the content blocks for those topics
+        take: 5, // Limit to 5 content blocks per topic to keep it manageable
+      },
+    },
   });
 
   if (learnedTopics.length === 0) {
     return "You haven't marked any topics as 'learned' yet. Once you do, I can help you revise them!";
   }
 
+  // 2. Combine the content from all learned topics
   const context = learnedTopics
     .map(
       (topic) =>
@@ -238,6 +245,11 @@ export const getRevisionForUser = async (userId) => {
     )
     .join('\n---\n');
 
+  if (!context.trim()) {
+     return "You've learned some topics, but they don't have any revision content yet. Please check back later.";
+  }
+
+  // 3. Create the AI prompt
   const messages = [
     {
       role: 'system',
@@ -247,6 +259,7 @@ ${context}`,
     },
   ];
 
+  // 4. Get the AI response
   const revisionQuestion = await getChatCompletion(messages);
   return revisionQuestion;
 };
