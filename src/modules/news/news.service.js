@@ -1,4 +1,5 @@
 // This service will hold the "business logic" for news
+import axios from 'axios';
 import { summarizeArticle,generateNewsBroadcast } from '../../services/aiService.js';
 
 // A helper for custom errors
