@@ -107,3 +107,25 @@ export const postRadioChat = async (req, res) => {
     res.status(500).json({ message: error.message || 'Server error' });
   }
 };
+
+export const getHeadlines = async (req, res) => {
+  try {
+    const { category = 'general', language = 'en' } = req.query;
+    const articles = await NewsService.getHeadlines(category, language);
+    // We mimic the GNews structure so the frontend doesn't break
+    res.json({ articles, totalArticles: articles.length });
+  } catch (error) {
+    console.error('Error in /headlines:', error.message || error);
+    res.status(error.statusCode || 500).json({ error: error.message || 'Failed to fetch headlines.' });
+  }
+};
+export const searchNews = async (req, res) => {
+  try {
+    // req.query will contain { keyword, date, country, etc. }
+    const result = await NewsService.searchNews(req.query);
+    res.json(result); // Sends back { articles, totalArticles }
+  } catch (error) {
+    console.error('Error in /search:', error.message || error);
+    res.status(error.statusCode || 500).json({ error: error.message || 'Failed to fetch search results.' });
+  }
+};
