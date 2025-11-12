@@ -15,47 +15,38 @@ class AppError extends Error {
 const RSS_FEEDS = {
   general: [
     { url: 'https://timesofindia.indiatimes.com/rssfeedstopstories.cms', source: 'Times of India' },
-    // --- FIX: Replaced broken HT link ---
     { url: 'https://www.hindustantimes.com/feeds/rss/latest-news/rssfeed.xml', source: 'Hindustan Times' },
     { url: 'https://feeds.bbci.co.uk/news/world/rss.xml', source: 'BBC News' },
-    // --- FIX: Replaced unstable Reuters link with New York Times ---
     { url: 'https://rss.nytimes.com/services/xml/rss/nyt/World.xml', source: 'The New York Times' },
   ],
   technology: [
     { url: 'https://timesofindia.indiatimes.com/rssfeeds/5880659.cms', source: 'Times of India' },
-    // --- FIX: Replaced broken HT link ---
     { url: 'https://www.hindustantimes.com/feeds/rss/technology/rssfeed.xml', source: 'Hindustan Times' },
     { url: 'https://feeds.bbci.co.uk/news/technology/rss.xml', source: 'BBC Technology' },
   ],
   sports: [
     { url: 'https://timesofindia.indiatimes.com/rssfeeds/4719148.cms', source: 'Times of India' },
-    // --- FIX: Replaced broken HT link ---
     { url: 'https://www.hindustantimes.com/feeds/rss/sports/rssfeed.xml', source: 'Hindustan Times' },
     { url: 'https://feeds.bbci.co.uk/sport/rss.xml', source: 'BBC Sport' },
   ],
   business: [
     { url: 'https://timesofindia.indiatimes.com/rssfeeds/1898055.cms', source: 'Times of India' },
-    // --- FIX: Replaced broken HT link ---
     { url: 'https://www.hindustantimes.com/feeds/rss/business/rssfeed.xml', source: 'Hindustan Times' },
     { url: 'https://feeds.bbci.co.uk/news/business/rss.xml', source: 'BBC Business' },
   ],
   entertainment: [
     { url: 'https://timesofindia.indiatimes.com/rssfeeds/1081479906.cms', source: 'Times of India' },
-    // --- FIX: Replaced broken HT link ---
     { url: 'https://www.hindustantimes.com/feeds/rss/entertainment/rssfeed.xml', source: 'Hindustan Times' },
   ],
   health: [
-    // --- FIX: Replaced broken HT link ---
     { url: 'https://www.hindustantimes.com/feeds/rss/health/rssfeed.xml', source: 'Hindustan Times' },
     { url: 'https://feeds.bbci.co.uk/news/health/rss.xml', source: 'BBC Health' },
   ],
   science: [
-    // --- FIX: Replaced broken HT link ---
     { url: 'https://www.hindustantimes.com/feeds/rss/science/rssfeed.xml', source: 'Hindustan Times' },
     { url: 'https://feeds.bbci.co.uk/news/science_and_environment/rss.xml', source: 'BBC Science' },
   ]
 };
-// --- END OF FIXES ---
 
 /**
  * Normalizes an article from GNews or RSS to our standard format
@@ -193,25 +184,24 @@ export const getHeadlines = async (category, language) => {
   return uniqueArticles;
 };
 
+// --- THIS IS THE UPDATED FUNCTION ---
+
 /**
- * Searches GNews for articles based on query parameters
+ * Searches GNews AND RSS for articles based on query parameters
  * @param {object} query - The query params from the request (keyword, date, etc.)
  * @returns {Promise<object>} A promise resolving to { articles, totalArticles }
  */
 export const searchNews = async (query) => {
   const {
-    keyword = '',
+    keyword = 'India', // Default to 'India' if no keyword
     date = '',
     language = 'en',
     country = 'in',
     sortBy = 'publishedAt',
   } = query;
 
-  if (!keyword) {
-    throw new AppError('Keyword is required for search mode.', 400);
-  }
-
-  const params = {
+  // --- 1. Fetch from GNews (for historical/keyword match) ---
+  const gnewsParams = {
     token: process.env.GNEWS_API_KEY,
     lang: language,
     country: country,
@@ -220,26 +210,70 @@ export const searchNews = async (query) => {
   };
 
   if (date) {
-    params.from = `${date}T00:00:00Z`;
-    params.to = `${date}T23:59:59Z`;
+    gnewsParams.from = `${date}T00:00:00Z`;
+    gnewsParams.to = `${date}T23:59:59Z`;
   }
 
-  const url = 'https://gnews.io/api/v4/search';
+  const gnewsUrl = 'https://gnews.io/api/v4/search';
+  let gnewsArticles = [];
 
   try {
-    const response = await axios.get(url, { params, timeout: 15000 });
-    // Normalize the results before sending
-    const normalized = (response.data.articles || [])
+    const response = await axios.get(gnewsUrl, { params: gnewsParams, timeout: 15000 });
+    gnewsArticles = (response.data.articles || [])
       .map(article => normalizeArticle(article, 'gnews', null))
       .filter(Boolean);
-
-    // The API returns 'totalArticles' which we should preserve
-    return { articles: normalized, totalArticles: response.data.totalArticles };
   } catch (error) {
     console.error('Error in GNews search:', error.message);
-    throw new AppError('Failed to fetch search results from GNews.', 500);
+    // Don't throw, just continue to RSS feeds
   }
+
+  // --- 2. Fetch from ALL RSS feeds (for real-time data) ---
+  // We fetch all categories to create a large pool to search from
+  const rssCategories = Object.keys(RSS_FEEDS);
+  const rssFetchPromises = rssCategories.map(category => fetchFromRss(category));
+  const allRssFeeds = await Promise.all(rssFetchPromises);
+  let rssArticles = allRssFeeds.flat();
+
+  // --- 3. Combine and De-duplicate ---
+  const allArticles = [...gnewsArticles, ...rssArticles];
+  let uniqueArticles = deDuplicateArticles(allArticles);
+
+  // --- 4. Apply our own backend filters ---
+  
+  // Helper to check if two dates are the same day (ignoring time)
+  const isSameDay = (d1, d2) => {
+    return d1.getFullYear() === d2.getFullYear() &&
+           d1.getMonth() === d2.getMonth() &&
+           d1.getDate() === d2.getDate();
+  };
+
+  // Filter by Date (if provided)
+  if (date) {
+    // Create a date object that correctly handles timezone
+    // We add 'T12:00:00Z' to make it UTC noon, avoiding timezone shifts
+    const targetDate = new Date(`${date}T12:00:00Z`);
+    uniqueArticles = uniqueArticles.filter(article => 
+      isSameDay(article.publishedAt, targetDate)
+    );
+  }
+
+  // Filter by Keyword
+  if (keyword) {
+    const lowerKeyword = keyword.toLowerCase();
+    uniqueArticles = uniqueArticles.filter(article =>
+      (article.title && article.title.toLowerCase().includes(lowerKeyword)) ||
+      (article.description && article.description.toLowerCase().includes(lowerKeyword))
+    );
+  }
+
+  // --- 5. Sort and Return ---
+  uniqueArticles.sort((a, b) => b.publishedAt.getTime() - a.publishedAt.getTime());
+
+  return { articles: uniqueArticles, totalArticles: uniqueArticles.length };
 };
+
+// --- END OF UPDATED FUNCTION ---
+
 
 /**
  * [DEPRECATED] Builds params for the old GNews route

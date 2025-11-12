@@ -32,3 +32,12 @@ export const deleteBookmark = async (req, res) => {
     res.status(error.statusCode || 500).json({ message: error.message || 'Server error' });
   }
 };
+export const getPublicBookmarks = async (req, res) => {
+  try {
+    const bookmarks = await BookmarkService.getPublicBookmarks();
+    res.json(bookmarks);
+  } catch (error) {
+    console.error('Public bookmarks fetch error:', error);
+    res.status(500).json({ message: 'Server error' });
+  }
+};

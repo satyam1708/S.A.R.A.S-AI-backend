@@ -51,3 +51,17 @@ export const deleteByUserAndUrl = async (userId, url) => {
   }
   return true;
 };
+
+export const getPublicBookmarks = async () => {
+  return prisma.bookmark.findMany({
+    orderBy: { createdAt: 'desc' },
+    take: 50,
+    include: {
+      user: {
+        select: {
+          name: true, // Select the user's name
+        },
+      },
+    },
+  });
+};
