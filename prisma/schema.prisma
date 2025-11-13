@@ -55,7 +55,7 @@ model Topic {
   content      ContentBlock[]
   learnedBy    LearningHistory[]
   chatSessions ChatSession[]
-  quiz         Quiz? // <-- Each topic can have one quiz
+  quiz         Quiz[] // <-- Each topic can have one quiz
 }
 
 // The raw knowledge snippets for the AI to learn from
@@ -117,7 +117,7 @@ model CachedBroadcast {
 model Quiz {
   id        Int               @id @default(autoincrement())
   topic     Topic             @relation(fields: [topicId], references: [id], onDelete: Cascade)
-  topicId   Int               @unique // A topic can only have one quiz
+  topicId   Int                // A topic can only have one quiz
   questions Question[]
   attempts  UserQuizAttempt[]
   createdAt DateTime          @default(now())
