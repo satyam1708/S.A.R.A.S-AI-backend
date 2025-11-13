@@ -200,3 +200,53 @@ export const generateNewsBroadcast = async (articlesContent, category, messages,
     throw new Error("Failed to get AI broadcast.");
   }
 };
+export const chunkContentForLearning = async (fullText) => {
+  if (!client) {
+    throw new Error("AI client is not initialized.");
+  }
+
+  const messages = [
+    {
+      role: "system",
+      content: `You are an AI text processor. Your job is to parse a large document and split it into an array of small, self-contained "Content Blocks" for a learning system.
+Each block should be a single paragraph, definition, or a few related sentences.
+The response must be a single, valid JSON object in the format:
+{
+  "blocks": [
+    "This is the first logical chunk of text.",
+    "This is the second, separate concept from the text.",
+    "This is a third piece of information."
+  ]
+}
+Do not include any text, markdown, or explanation outside of this single JSON object.`,
+    },
+    {
+      role: "user",
+      content: `Here is the full text to process:
+---
+${fullText}
+---`
+    }
+  ];
+
+  try {
+    const result = await client.chat.completions.create({
+      messages: messages,
+      max_tokens: 4000,
+      response_format: { type: "json_object" },
+    });
+    
+    const jsonString = result.choices[0].message.content;
+    const parsed = JSON.parse(jsonString);
+    
+    if (!parsed.blocks || !Array.isArray(parsed.blocks)) {
+      throw new Error("AI returned invalid block format.");
+    }
+    
+    return parsed.blocks; // Returns the array of content strings
+
+  } catch (error) {
+    console.error("Error chunking content:", error);
+    throw new Error("Failed to get AI-generated content blocks.");
+  }
+};

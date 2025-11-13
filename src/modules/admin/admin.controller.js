@@ -105,3 +105,19 @@ export const deleteQuiz = async (req, res) => {
     res.status(500).json({ message: error.message });
   }
 };
+
+export const uploadBookContent = async (req, res) => {
+  try {
+    const { topicId } = req.params;
+    const file = req.file;
+
+    if (!file) {
+      return res.status(400).json({ message: 'No .txt file was uploaded.' });
+    }
+
+    const count = await AdminService.processBookUpload(parseInt(topicId), file.buffer);
+    res.status(201).json({ message: `Successfully added ${count} new content blocks.`, count });
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+};

@@ -1,6 +1,6 @@
 // src/modules/admin/admin.service.js
 import prisma from '../../lib/prisma.js';
-import { generateQuizFromContent } from '../../services/aiService.js';
+import { generateQuizFromContent, chunkContentForLearning } from '../../services/aiService.js';
 
 // --- Subject Management ---
 export const createSubject = (name) => {
@@ -121,4 +121,33 @@ export const deleteQuiz = (quizId) => {
   return prisma.quiz.delete({
     where: { id: quizId },
   });
+};
+
+export const processBookUpload = async (topicId, fileBuffer) => {
+  // 1. Read the text from the file buffer
+  const fullText = fileBuffer.toString('utf-8');
+  if (!fullText.trim()) {
+    throw new Error('Uploaded file is empty.');
+  }
+
+  // 2. Call AI service to chunk the content
+  const contentChunks = await chunkContentForLearning(fullText);
+
+  if (!contentChunks || contentChunks.length === 0) {
+    throw new Error('AI failed to process the document into blocks.');
+  }
+
+  // 3. Prepare data for batch-creation
+  const blocksToCreate = contentChunks.map(chunk => ({
+    content: chunk,
+    topicId: topicId,
+  }));
+
+  // 4. Save all new blocks to the database in a single transaction
+  const result = await prisma.contentBlock.createMany({
+    data: blocksToCreate,
+  });
+
+  // 5. Return the number of blocks created
+  return result.count;
 };
