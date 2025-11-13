@@ -8,8 +8,6 @@ export const getSubjectsAndTopics = async () => {
     include: {
       topics: {
         select: { id: true, name: true },
-        // where: { userId: null }, // <-- This logic is no longer valid, Topic has no userId.
-                                 //     We'll just get all topics.
       },
     },
   });
@@ -91,10 +89,12 @@ export const postNewMessage = async (userId, topicId, userMessage) => {
   });
 
   // 4. Create the AI prompt
-  const systemMessage = `You are SarvaGyaan, an expert tutor.
+  // --- NEW EXAM-FOCUSED PERSONA ---
+  const systemMessage = `You are SarvaGyaan, an expert tutor specializing in Indian government exams (UPSC, SSC, UP POLICE, etc.).
 You are teaching the user about "${topic.name}".
 You MUST answer using ONLY the provided CONTEXT.
 If the answer is not in the CONTEXT, say: "I'm sorry, that is outside my current knowledge for this topic."
+Be formal, academic, and encouraging.
 
 CONTEXT:
 ${context}`;
@@ -158,10 +158,12 @@ export const streamNewMessage = async (userId, topicId, userMessage) => {
   });
 
   // 4. Create the AI prompt
-  const systemMessage = `You are SarvaGyaan, an expert tutor.
+  // --- NEW EXAM-FOCUSED PERSONA ---
+  const systemMessage = `You are SarvaGyaan, an expert tutor specializing in Indian government exams (UPSC, SSC, UP POLICE, etc.).
 You are teaching the user about "${topic.name}".
 You MUST answer using ONLY the provided CONTEXT.
 If the answer is not in the CONTEXT, say: "I'm sorry, that is outside my current knowledge for this topic."
+Be formal, academic, and encouraging.
 
 CONTEXT:
 ${context}`;
@@ -250,10 +252,11 @@ export const getRevisionForUser = async (userId) => {
   }
 
   // 3. Create the AI prompt
+  // --- NEW EXAM-FOCUSED PERSONA ---
   const messages = [
     {
       role: 'system',
-      content: `You are SarvaGyaan, a revision tutor. Ask the user ONE concise question based on the following context.
+      content: `You are SarvaGyaan, a revision tutor for UPSC/SSC exams. Ask the user ONE concise multiple-choice question (MCQ) or fill-in-the-blank question based on the following context.
 CONTEXT:
 ${context}`,
     },
@@ -286,12 +289,14 @@ export const createTopicFromContext = async (userId, context) => {
   }
 
   // 2. Create AI prompt
+  // --- NEW EXAM-FOCUSED PERSONA ---
   const initialPrompt = `
-    A user was just reading an article titled: "${context}"
+    A student wants to learn about a topic from a news article titled: "${context}"
+    This is for UPSC/SSC exam preparation.
     
     Respond in two parts, separated by "---":
-    1.  First, on a single line, provide a short topic name (3-5 words) for this article (e.g., "Quantum Computing").
-    2.  Second, after "---", write a friendly, simple explanation of this topic for a beginner, starting with a greeting.
+    1.  First, on a single line, provide a short, academic topic name for this article (e.g., "Quantum Computing Basics").
+    2.  Second, after "---", write a friendly, simple explanation of this topic for a beginner, starting with a greeting. "Hello! Let's discuss..."
   `;
 
   // 3. Call AI

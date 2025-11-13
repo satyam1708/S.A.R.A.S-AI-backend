@@ -3,8 +3,8 @@ services:
     name: thesarvanews-backend
     env: node
     plan: free
-    buildCommand: npm install
-    startCommand: node server.js
+    buildCommand: npm install && npx prisma generate # Added prisma generate
+    startCommand: node src/app.js # <-- THIS IS THE FIX
     envVars:
       - key: NODE_VERSION
         value: 18 
@@ -13,4 +13,11 @@ services:
       - key: JWT_SECRET
         sync: false
       - key: DATABASE_URL
+        sync: false
+      # You will need to add your Azure keys here for deployment
+      - key: AZURE_OPENAI_ENDPOINT
+        sync: false
+      - key: AZURE_OPENAI_KEY
+        sync: false
+      - key: AZURE_OPENAI_CHAT_DEPLOYMENT
         sync: false
