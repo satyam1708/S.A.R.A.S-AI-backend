@@ -2,6 +2,7 @@
 import axios from 'axios';
 import Parser from 'rss-parser';
 import { summarizeArticle, generateNewsBroadcast } from '../../services/aiService.js';
+import prisma from '../../lib/prisma.js'; // <-- 1. IMPORT PRISMA
 
 // A helper for custom errors
 class AppError extends Error {
@@ -47,6 +48,20 @@ const RSS_FEEDS = {
     { url: 'https://feeds.bbci.co.uk/news/science_and_environment/rss.xml', source: 'BBC Science' },
   ]
 };
+
+// --- [NEW] IN-MEMORY CACHE ---
+const headlinesCache = {
+  general: { articles: [], timestamp: 0 },
+  technology: { articles: [], timestamp: 0 },
+  sports: { articles: [], timestamp: 0 },
+  business: { articles: [], timestamp: 0 },
+  entertainment: { articles: [], timestamp: 0 },
+  health: { articles: [], timestamp: 0 },
+  science: { articles: [], timestamp: 0 },
+};
+// Cache duration: 10 minutes * 60 seconds * 1000 milliseconds
+const CACHE_DURATION = 10 * 60 * 1000; 
+// ------------------------------
 
 /**
  * Normalizes an article from GNews or RSS to our standard format
@@ -169,6 +184,18 @@ const fetchFromGNews = async (category = 'general', language = 'en') => {
  * @returns {Promise<Array<object>>} A promise resolving to a unique, sorted array of articles
  */
 export const getHeadlines = async (category, language) => {
+  // --- [NEW] CACHE LOGIC ---
+  const now = Date.now();
+  const cachedData = headlinesCache[category];
+
+  if (cachedData && (now - cachedData.timestamp < CACHE_DURATION)) {
+    console.log(`[Cache] Serving '${category}' from cache.`);
+    return cachedData.articles;
+  }
+  
+  console.log(`[CACHE] Refreshing '${category}'...`);
+  // -------------------------
+
   // Fetch from all sources in parallel
   const [rssArticles, gnewsArticles] = await Promise.all([
     fetchFromRss(category),
@@ -180,6 +207,13 @@ export const getHeadlines = async (category, language) => {
 
   // Sort by date, newest first
   uniqueArticles.sort((a, b) => b.publishedAt.getTime() - a.publishedAt.getTime());
+
+  // --- [NEW] SAVE TO CACHE ---
+  headlinesCache[category] = {
+    articles: uniqueArticles,
+    timestamp: now,
+  };
+  // ---------------------------
 
   return uniqueArticles;
 };
@@ -330,13 +364,40 @@ export const getSummary = async (content) => {
 };
 
 /**
- * Generates an AI radio broadcast script
+ * --- 2. THIS IS THE FULLY UPDATED FUNCTION ---
+ * Generates an AI radio broadcast script, using cache first
  * @param {string} category - The news category
  * @param {string} language - The language code (e.g., 'en-US')
  * @returns {Promise<object>} A promise resolving to { script, articles }
  */
 export const getRadioBroadcast = async (category, language) => {
-  // 1. Get headlines from our new combined feed
+  const CACHE_DURATION_MINUTES = 30; // Use DB cache for 30 minutes
+  const now = new Date();
+
+  // 1. Check for a fresh cache entry in the DATABASE
+  try {
+    const cached = await prisma.cachedBroadcast.findUnique({
+      where: { category_language: { category, language } },
+    });
+
+    if (cached) {
+      const diffInMinutes = (now.getTime() - cached.updatedAt.getTime()) / (1000 * 60);
+      if (diffInMinutes < CACHE_DURATION_MINUTES) {
+        // CACHE HIT: Return cached data
+        console.log(`[DB Cache HIT] Serving AI Radio for ${category} (${language})`);
+        // Articles are stored as JSON, Prisma auto-deserializes them
+        return { script: cached.script, articles: cached.articles };
+      }
+    }
+  } catch (e) {
+    console.error("DB Cache read error:", e.message);
+    // Don't fail, just proceed to generate new content
+  }
+  
+  // 2. CACHE MISS or STALE: Generate new content
+  console.log(`[DB Cache MISS] Generating new AI Radio for ${category} (${language})`);
+  
+  // 2a. Get headlines (this will use the in-memory cache, which is great!)
   const articles = await getHeadlines(category, language);
   const top5 = articles.slice(0, 5);
 
@@ -344,15 +405,40 @@ export const getRadioBroadcast = async (category, language) => {
     throw new AppError('No articles found to generate a broadcast.', 404);
   }
 
-  // 2. Format content for the AI
+  // 2b. Format content for the AI
   const articlesContent = top5
-    .map(a => `${a.title}. ${a.description || ''}`) // Handle possible missing description
+    .map(a => `${a.title}. ${a.description || ''}`)
     .join('\n\n');
 
-  // 3. Call the AI to generate the script
+  // 2c. Call the AI to generate the script
   const script = await generateNewsBroadcast(articlesContent, category, [], language);
-  return { script, articles: top5 }; // Return the normalized articles
+
+  // 2d. Save the new script and articles to the DB cache
+  try {
+    await prisma.cachedBroadcast.upsert({
+      where: { category_language: { category, language } },
+      create: {
+        category,
+        language,
+        script,
+        articles: top5, // Prisma handles JSON serialization
+      },
+      update: {
+        script,
+        articles: top5,
+        updatedAt: now // Explicitly set update time
+      },
+    });
+    console.log(`[DB Cache WRITE] Saved new AI Radio for ${category} (${language})`);
+  } catch (e) {
+    console.error("DB Cache write error:", e.message);
+    // Don't fail the request, just log the error
+  }
+
+  // 2e. Return the newly generated data
+  return { script, articles: top5 };
 };
+
 
 /**
  * Generates an AI response for the radio chat
@@ -362,7 +448,7 @@ export const getRadioBroadcast = async (category, language) => {
  * @param {string} language - The language code (e.g., 'en-US')
  * @returns {Promise<object>} A promise resolving to { role: 'assistant', content: ... }
  */
-export const getRadioChatResponse = async (userMessage, broadcastScript, chatHistory, language) => {
+export const getRadioBroadcastResponse = async (userMessage, broadcastScript, chatHistory, language) => {
   const articlesContent = `Here is the full broadcast script I am reading from:\n${broadcastScript}`;
 
   const messages = [
@@ -370,6 +456,7 @@ export const getRadioChatResponse = async (userMessage, broadcastScript, chatHis
     { role: 'user', content: userMessage },
   ];
 
+  // This remains a live AI call, which is correct for a chat.
   const response = await generateNewsBroadcast(articlesContent, "Radio Chat", messages, language);
   return { role: 'assistant', content: response }; // Return as an object
 };

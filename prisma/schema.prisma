@@ -96,3 +96,14 @@ model ChatMessage {
   content   String      @db.Text
   createdAt DateTime    @default(now())
 }
+
+model CachedBroadcast {
+  id        Int      @id @default(autoincrement())
+  category  String
+  language  String
+  script    String   @db.Text
+  articles  Json // Store the array of articles
+  updatedAt DateTime @updatedAt
+
+  @@unique([category, language]) // Only one cache entry per category/language combo
+}
