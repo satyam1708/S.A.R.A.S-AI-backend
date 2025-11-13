@@ -7,8 +7,9 @@ import {
   markTopicAsLearned,
   getRevision,
   createChatFromContext,
-  getQuizForTopic,    // <-- [NEW]
-  submitQuizForTopic, // <-- [NEW]
+  getQuizzesForTopic, // <-- [UPDATED]
+  submitQuizForTopic,
+  checkAnswer,        // <-- [NEW]
 } from './gs.controller.js';
 import { authMiddleware } from '../../middleware/auth.middleware.js';
 
@@ -31,7 +32,13 @@ gsRouter.post('/learn/:topicId', authMiddleware, markTopicAsLearned);
 gsRouter.get('/revise', authMiddleware, getRevision);
 
 // --- [NEW] Quiz Routes for Students ---
-gsRouter.get('/quiz/:topicId', authMiddleware, getQuizForTopic);
+// --- [NEW] This route gets ALL quizzes for a topic
+gsRouter.get('/quizzes/:topicId', authMiddleware, getQuizzesForTopic); // <-- [UPDATED]
+
+// --- [NEW] This route checks a SINGLE answer for instant feedback
+gsRouter.post('/quiz/check-answer', authMiddleware, checkAnswer);
+
+// --- [NEW] This route submits the FINAL score
 gsRouter.post('/quiz/submit/:quizId', authMiddleware, submitQuizForTopic);
 
 

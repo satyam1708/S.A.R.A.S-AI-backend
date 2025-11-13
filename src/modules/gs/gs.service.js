@@ -345,3 +345,134 @@ export const createTopicFromContext = async (userId, context) => {
   // 8. Return the new topic object
   return newTopic;
 };
+
+// --- [NEW] STUDENT QUIZ FUNCTIONS ---
+
+/**
+ * --- NEW & UPDATED ---
+ * Gets ALL quizzes for a topic, but formatted for a student.
+ * (i.e., correct answers are REMOVED to prevent cheating)
+ */
+export const getQuizzesForTopic = async (topicId) => {
+  const quizzes = await prisma.quiz.findMany({
+    where: { topicId: topicId },
+    include: {
+      questions: {
+        select: {
+          id: true,
+          questionText: true,
+          options: true,
+          // We intentionally DO NOT select correctAnswerIndex
+        },
+        orderBy: { id: 'asc' },
+      },
+      _count: {
+        select: { questions: true }
+      }
+    },
+    orderBy: { createdAt: 'desc' }
+  });
+
+  if (!quizzes || quizzes.length === 0) {
+    return []; // Return empty array instead of error
+  }
+
+  // Map the quizzes to add the 'total' count to the main object
+  return quizzes.map(quiz => {
+    const { _count, ...rest } = quiz;
+    return {
+      ...rest,
+      totalQuestions: _count.questions
+    };
+  });
+};
+
+
+/**
+ * --- NEW ---
+ * Checks a single answer for a user and returns instant feedback.
+ * This is how you show the answer immediately.
+ */
+export const checkAnswer = async (questionId, selectedAnswerIndex) => {
+  const question = await prisma.question.findUnique({
+    where: { id: questionId },
+    select: { id: true, correctAnswerIndex: true }
+  });
+
+  if (!question) {
+    throw new Error("Question not found.");
+  }
+
+  const isCorrect = question.correctAnswerIndex === selectedAnswerIndex;
+
+  return {
+    questionId: question.id,
+    isCorrect: isCorrect,
+    correctAnswerIndex: question.correctAnswerIndex // Return the correct answer
+  };
+};
+
+
+/**
+ * --- NEW ---
+ * Submits a user's full quiz attempt and saves the score.
+ */
+export const submitQuiz = async (userId, quizId, answers) => {
+  // 1. Get the quiz and its questions (this time, with correct answers)
+  const quiz = await prisma.quiz.findUnique({
+    where: { id: quizId },
+    include: {
+      questions: {
+        select: { id: true, correctAnswerIndex: true }
+      }
+    }
+  });
+
+  if (!quiz) {
+    throw new Error("Quiz not found.");
+  }
+
+  // 2. Create a map of correct answers for easy lookup
+  const correctAnswersMap = new Map();
+  quiz.questions.forEach(q => {
+    correctAnswersMap.set(q.id, q.correctAnswerIndex);
+  });
+
+  let score = 0;
+  const total = quiz.questions.length;
+  const userAnswersData = [];
+
+  // 3. Grade the answers
+  for (const answer of answers) {
+    const correctAnswerIndex = correctAnswersMap.get(answer.questionId);
+    const isCorrect = answer.selectedAnswerIndex === correctAnswerIndex;
+
+    if (isCorrect) {
+      score++;
+    }
+
+    userAnswersData.push({
+      questionId: answer.questionId,
+      selectedAnswerIndex: answer.selectedAnswerIndex,
+      isCorrect: isCorrect
+    });
+  }
+
+  // 4. Save the full attempt in the database
+  const attempt = await prisma.userQuizAttempt.create({
+    data: {
+      userId: userId,
+      quizId: quizId,
+      score: score,
+      total: total,
+      answers: {
+        create: userAnswersData // Create all UserAnswer records
+      }
+    },
+    include: {
+      answers: true // Return the attempt with the answers
+    }
+  });
+
+  return attempt;
+};

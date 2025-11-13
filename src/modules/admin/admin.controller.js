@@ -81,11 +81,16 @@ export const generateQuizForTopic = async (req, res) => {
   }
 };
 
-export const getQuizForTopic = async (req, res) => {
+/**
+ * --- UPDATED ---
+ * Renamed function to reflect it gets *all* quizzes.
+ */
+export const getQuizzesForTopic = async (req, res) => {
   try {
     const { topicId } = req.params;
-    const quiz = await AdminService.getQuiz(parseInt(topicId));
-    res.json(quiz);
+    // --- UPDATED ---
+    const quizzes = await AdminService.getQuizzesForTopic(parseInt(topicId));
+    res.json(quizzes);
   } catch (error) {
     res.status(500).json({ message: error.message });
   }

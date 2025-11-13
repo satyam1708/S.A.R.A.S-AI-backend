@@ -45,8 +45,9 @@ export const deleteContent = (blockId) => {
 // --- [NEW] Quiz Management ---
 
 /**
+ * --- UPDATED ---
  * Generates a new quiz for a topic using AI and saves it to DB.
- * This deletes any existing quiz for that topic.
+ * This NO LONGER deletes old quizzes. It just adds a new one.
  */
 export const generateQuiz = async (topicId) => {
   // 1. Get all content blocks for the topic
@@ -62,17 +63,17 @@ export const generateQuiz = async (topicId) => {
   const context = contentBlocks.map((block) => block.content).join('\n\n');
 
   // 3. Call AI service to generate questions
-  // This will return an array like: [{ questionText, options, correctAnswerIndex }, ...]
   const questions = await generateQuizFromContent(context);
 
   if (!questions || questions.length === 0) {
     throw new Error('AI failed to generate questions.');
   }
 
-  // 4. Delete old quiz (if it exists)
-  await prisma.quiz.deleteMany({
-    where: { topicId },
-  });
+  // 4. --- REMOVED ---
+  // We no longer delete old quizzes.
+  // await prisma.quiz.deleteMany({
+  //   where: { topicId },
+  // });
 
   // 5. Create new quiz and questions in a transaction
   const newQuiz = await prisma.quiz.create({
@@ -95,16 +96,20 @@ export const generateQuiz = async (topicId) => {
 };
 
 /**
- * Gets the quiz for a specific topic (includes questions)
+ * --- UPDATED ---
+ * Gets ALL quizzes for a specific topic (includes questions)
  */
-export const getQuiz = (topicId) => {
-  return prisma.quiz.findUnique({
+export const getQuizzesForTopic = (topicId) => {
+  return prisma.quiz.findMany({ // <-- Was findUnique
     where: { topicId },
     include: {
       questions: {
         orderBy: { id: 'asc' },
       },
     },
+    orderBy: {
+      createdAt: 'desc' // Show newest quizzes first
+    }
   });
 };
 

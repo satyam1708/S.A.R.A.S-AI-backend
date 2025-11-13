@@ -123,21 +123,55 @@ export const createChatFromContext = async (req, res, next) => {
 
 // --- [NEW] Quiz Functions for Students ---
 
-export const getQuizForTopic = async (req, res, next) => {
+/**
+ * --- UPDATED ---
+ * Renamed to get *quizzes* (plural) for a topic.
+ */
+export const getQuizzesForTopic = async (req, res, next) => {
   try {
     const { topicId } = req.params;
-    const quiz = await GsService.getQuiz(parseInt(topicId));
-    res.json(quiz);
+    // --- UPDATED ---
+    const quizzes = await GsService.getQuizzesForTopic(parseInt(topicId));
+    res.json(quizzes);
   } catch (error) {
     next(error);
   }
 };
 
+/**
+ * --- NEW ---
+ * Checks a single answer and returns immediate feedback.
+ */
+export const checkAnswer = async (req, res, next) => {
+  try {
+    const { questionId, selectedAnswerIndex } = req.body;
+    if (questionId == null || selectedAnswerIndex == null) {
+      return res.status(400).json({ message: 'questionId and selectedAnswerIndex are required.' });
+    }
+
+    const result = await GsService.checkAnswer(
+      parseInt(questionId),
+      parseInt(selectedAnswerIndex)
+    );
+    res.json(result); // Returns { isCorrect, correctAnswerIndex }
+  } catch (error) {
+    next(error);
+  }
+};
+
+/**
+ * --- NEW ---
+ * Submits the final quiz results.
+ */
 export const submitQuizForTopic = async (req, res, next) => {
   try {
     const { quizId } = req.params;
     const { answers } = req.body; // Expects: [{ questionId: 1, selectedAnswerIndex: 2 }, ...]
     const { id: userId } = req.user;
+
+    if (!answers || !Array.isArray(answers)) {
+      return res.status(400).json({ message: 'Invalid "answers" array.' });
+    }
 
     const results = await GsService.submitQuiz(
       userId,

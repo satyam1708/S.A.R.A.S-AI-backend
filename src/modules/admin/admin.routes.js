@@ -24,7 +24,8 @@ router.delete('/content/:blockId', AdminController.deleteContentBlock);
 
 // --- [NEW] Quiz Routes ---
 router.post('/quiz/generate/:topicId', AdminController.generateQuizForTopic);
-router.get('/quiz/:topicId', AdminController.getQuizForTopic);
+// --- UPDATED ---
+router.get('/quizzes/:topicId', AdminController.getQuizzesForTopic); // Was /quiz/:topicId
 router.delete('/quiz/:quizId', AdminController.deleteQuiz);
 
 export default router;
