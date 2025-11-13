@@ -1,5 +1,8 @@
-import prisma from '../../lib/prisma.js';
-import { getChatCompletion, getChatCompletionStream } from '../../services/aiService.js';
+import prisma from "../../lib/prisma.js";
+import {
+  getChatCompletion,
+  getChatCompletionStream,
+} from "../../services/aiService.js";
 
 // Get all subjects and their nested topics for the UI
 export const getSubjectsAndTopics = async () => {
@@ -34,7 +37,7 @@ export const getChatHistory = async (userId, topicId) => {
     // Check if the topic itself exists
     const topic = await prisma.topic.findUnique({ where: { id: topicId } });
     if (!topic) {
-      throw new Error('Topic not found.');
+      throw new Error("Topic not found.");
     }
     return []; // No history for this user and topic yet
   }
@@ -44,7 +47,7 @@ export const getChatHistory = async (userId, topicId) => {
     where: {
       sessionId: session.id,
     },
-    orderBy: { createdAt: 'asc' },
+    orderBy: { createdAt: "asc" },
   });
 };
 
@@ -60,7 +63,7 @@ export const postNewMessage = async (userId, topicId, userMessage) => {
     include: { content: true },
   });
 
-  if (!topic) throw new Error('Topic not found');
+  if (!topic) throw new Error("Topic not found");
 
   // 2. Find or create the ChatSession for this user and topic
   const session = await prisma.chatSession.upsert({
@@ -76,15 +79,15 @@ export const postNewMessage = async (userId, topicId, userMessage) => {
 
   const context =
     topic.content.length > 0
-      ? topic.content.map((c) => c.content).join('\n---\n')
-      : 'No specific context provided for this topic. Answer based on general knowledge.';
+      ? topic.content.map((c) => c.content).join("\n---\n")
+      : "No specific context provided for this topic. Answer based on general knowledge.";
 
   // 3. Get chat history (now from the session)
   const history = await prisma.chatMessage.findMany({
     where: {
       sessionId: session.id,
     },
-    orderBy: { createdAt: 'asc' },
+    orderBy: { createdAt: "asc" },
     take: 10,
   });
 
@@ -100,9 +103,9 @@ CONTEXT:
 ${context}`;
 
   const messages = [
-    { role: 'system', content: systemMessage },
+    { role: "system", content: systemMessage },
     ...history.map((msg) => ({ role: msg.role, content: msg.content })),
-    { role: 'user', content: userMessage },
+    { role: "user", content: userMessage },
   ];
 
   // 5. Get AI response
@@ -112,14 +115,14 @@ ${context}`;
   await prisma.$transaction([
     prisma.chatMessage.create({
       data: {
-        role: 'user',
+        role: "user",
         content: userMessage,
         sessionId: session.id, // <-- FIX: Use sessionId
       },
     }),
     prisma.chatMessage.create({
       data: {
-        role: 'assistant',
+        role: "assistant",
         content: aiResponse,
         sessionId: session.id, // <-- FIX: Use sessionId
       },
@@ -136,7 +139,7 @@ export const streamNewMessage = async (userId, topicId, userMessage) => {
     include: { content: true },
   });
 
-  if (!topic) throw new Error('Topic not found');
+  if (!topic) throw new Error("Topic not found");
 
   // 2. Find or create the ChatSession for this user and topic
   const session = await prisma.chatSession.upsert({
@@ -147,13 +150,13 @@ export const streamNewMessage = async (userId, topicId, userMessage) => {
 
   const context =
     topic.content.length > 0
-      ? topic.content.map((c) => c.content).join('\n---\n')
-      : 'No specific context provided for this topic. Answer based on general knowledge.';
+      ? topic.content.map((c) => c.content).join("\n---\n")
+      : "No specific context provided for this topic. Answer based on general knowledge.";
 
   // 3. Get chat history (now from the session)
   const history = await prisma.chatMessage.findMany({
     where: { sessionId: session.id },
-    orderBy: { createdAt: 'asc' },
+    orderBy: { createdAt: "asc" },
     take: 10,
   });
 
@@ -169,15 +172,15 @@ CONTEXT:
 ${context}`;
 
   const messages = [
-    { role: 'system', content: systemMessage },
+    { role: "system", content: systemMessage },
     ...history.map((msg) => ({ role: msg.role, content: msg.content })),
-    { role: 'user', content: userMessage },
+    { role: "user", content: userMessage },
   ];
-  
+
   // 5. Save the USER'S message to the DB first
   await prisma.chatMessage.create({
     data: {
-      role: 'user',
+      role: "user",
       content: userMessage,
       sessionId: session.id,
     },
@@ -194,7 +197,7 @@ ${context}`;
 export const saveAiResponse = async (sessionId, aiMessage) => {
   return prisma.chatMessage.create({
     data: {
-      role: 'assistant',
+      role: "assistant",
       content: aiMessage,
       sessionId: sessionId,
     },
@@ -208,7 +211,7 @@ export const markTopicAsLearned = async (userId, topicId) => {
     where: { id: topicId },
   });
 
-  if (!topic) throw new Error('Topic not found');
+  if (!topic) throw new Error("Topic not found");
 
   return prisma.learningHistory.upsert({
     where: { userId_topicId: { userId, topicId } },
@@ -222,14 +225,16 @@ export const getRevisionForUser = async (userId) => {
   // 1. Find all topics the user has learned
   const learnedTopics = await prisma.topic.findMany({
     where: {
-      learnedBy: { // This references the relation on the Topic model
+      learnedBy: {
+        // This references the relation on the Topic model
         some: {
           userId: userId, // Find topics where at least one LearningHistory record...
-        },               // ...matches this userId
+        }, // ...matches this userId
       },
     },
     include: {
-      content: { // Include the content blocks for those topics
+      content: {
+        // Include the content blocks for those topics
         take: 5, // Limit to 5 content blocks per topic to keep it manageable
       },
     },
@@ -243,19 +248,19 @@ export const getRevisionForUser = async (userId) => {
   const context = learnedTopics
     .map(
       (topic) =>
-        `Topic: ${topic.name}\n${topic.content.map((c) => c.content).join('\n')}`
+        `Topic: ${topic.name}\n${topic.content.map((c) => c.content).join("\n")}`
     )
-    .join('\n---\n');
+    .join("\n---\n");
 
   if (!context.trim()) {
-     return "You've learned some topics, but they don't have any revision content yet. Please check back later.";
+    return "You've learned some topics, but they don't have any revision content yet. Please check back later.";
   }
 
   // 3. Create the AI prompt
   // --- NEW EXAM-FOCUSED PERSONA ---
   const messages = [
     {
-      role: 'system',
+      role: "system",
       content: `You are SarvaGyaan, a revision tutor for UPSC/SSC exams. Ask the user ONE concise multiple-choice question (MCQ) or fill-in-the-blank question based on the following context.
 CONTEXT:
 ${context}`,
@@ -278,14 +283,14 @@ export const createTopicFromContext = async (userId, context) => {
   // 1. Get the "General" Subject.
   //    You MUST create this subject in your database first!
   const generalSubject = await prisma.subject.findUnique({
-    where: { name: 'General' },
+    where: { name: "General" },
   });
 
   if (!generalSubject) {
-    console.error("FATAL ERROR: The 'General' subject was not found in the database.");
-    throw new Error(
-      "Server configuration error: Default subject not found."
+    console.error(
+      "FATAL ERROR: The 'General' subject was not found in the database."
     );
+    throw new Error("Server configuration error: Default subject not found.");
   }
 
   // 2. Create AI prompt
@@ -300,11 +305,11 @@ export const createTopicFromContext = async (userId, context) => {
   `;
 
   // 3. Call AI
-  const messages = [{ role: 'system', content: initialPrompt }];
+  const messages = [{ role: "system", content: initialPrompt }];
   const aiResponse = await getChatCompletion(messages);
 
   // 4. Parse response
-  const responseParts = aiResponse.split('---', 2);
+  const responseParts = aiResponse.split("---", 2);
   let topicName;
   let initialMessage;
 
@@ -313,7 +318,8 @@ export const createTopicFromContext = async (userId, context) => {
     initialMessage = responseParts[1].trim();
   } else {
     topicName = context.substring(0, 50);
-    initialMessage = "Hello! Let's talk about that topic. What would you like to know first?";
+    initialMessage =
+      "Hello! Let's talk about that topic. What would you like to know first?";
   }
 
   // 5. Create the new Topic in the database
@@ -336,7 +342,7 @@ export const createTopicFromContext = async (userId, context) => {
   // 7. Save the AI's first message to the new chat session
   await prisma.chatMessage.create({
     data: {
-      role: 'assistant',
+      role: "assistant",
       content: initialMessage,
       sessionId: newSession.id, // <-- FIX: Use the new sessionId
     },
@@ -364,13 +370,13 @@ export const getQuizzesForTopic = async (topicId) => {
           options: true,
           // We intentionally DO NOT select correctAnswerIndex
         },
-        orderBy: { id: 'asc' },
+        orderBy: { id: "asc" },
       },
       _count: {
-        select: { questions: true }
-      }
+        select: { questions: true },
+      },
     },
-    orderBy: { createdAt: 'desc' }
+    orderBy: { createdAt: "desc" },
   });
 
   if (!quizzes || quizzes.length === 0) {
@@ -378,15 +384,14 @@ export const getQuizzesForTopic = async (topicId) => {
   }
 
   // Map the quizzes to add the 'total' count to the main object
-  return quizzes.map(quiz => {
+  return quizzes.map((quiz) => {
     const { _count, ...rest } = quiz;
     return {
       ...rest,
-      totalQuestions: _count.questions
+      totalQuestions: _count.questions,
     };
   });
 };
-
 
 /**
  * --- NEW ---
@@ -396,7 +401,7 @@ export const getQuizzesForTopic = async (topicId) => {
 export const checkAnswer = async (questionId, selectedAnswerIndex) => {
   const question = await prisma.question.findUnique({
     where: { id: questionId },
-    select: { id: true, correctAnswerIndex: true }
+    select: { id: true, correctAnswerIndex: true },
   });
 
   if (!question) {
@@ -408,10 +413,9 @@ export const checkAnswer = async (questionId, selectedAnswerIndex) => {
   return {
     questionId: question.id,
     isCorrect: isCorrect,
-    correctAnswerIndex: question.correctAnswerIndex // Return the correct answer
+    correctAnswerIndex: question.correctAnswerIndex, // Return the correct answer
   };
 };
-
 
 /**
  * --- NEW ---
@@ -423,9 +427,9 @@ export const submitQuiz = async (userId, quizId, answers) => {
     where: { id: quizId },
     include: {
       questions: {
-        select: { id: true, correctAnswerIndex: true }
-      }
-    }
+        select: { id: true, correctAnswerIndex: true },
+      },
+    },
   });
 
   if (!quiz) {
@@ -434,7 +438,7 @@ export const submitQuiz = async (userId, quizId, answers) => {
 
   // 2. Create a map of correct answers for easy lookup
   const correctAnswersMap = new Map();
-  quiz.questions.forEach(q => {
+  quiz.questions.forEach((q) => {
     correctAnswersMap.set(q.id, q.correctAnswerIndex);
   });
 
@@ -454,7 +458,7 @@ export const submitQuiz = async (userId, quizId, answers) => {
     userAnswersData.push({
       questionId: answer.questionId,
       selectedAnswerIndex: answer.selectedAnswerIndex,
-      isCorrect: isCorrect
+      isCorrect: isCorrect,
     });
   }
 
@@ -466,13 +470,146 @@ export const submitQuiz = async (userId, quizId, answers) => {
       score: score,
       total: total,
       answers: {
-        create: userAnswersData // Create all UserAnswer records
-      }
+        create: userAnswersData, // Create all UserAnswer records
+      },
     },
     include: {
-      answers: true // Return the attempt with the answers
-    }
+      answers: true, // Return the attempt with the answers
+    },
   });
 
   return attempt;
+};
+
+const calculateNextReview = (strength) => {
+  const now = new Date();
+  const intervals = [
+    10 * 60 * 1000, // 10 minutes (strength 0 -> 1)
+    24 * 60 * 60 * 1000, // 1 day (strength 1 -> 2)
+    3 * 24 * 60 * 60 * 1000, // 3 days (strength 2 -> 3)
+    7 * 24 * 60 * 60 * 1000, // 7 days (strength 3 -> 4)
+    14 * 24 * 60 * 60 * 1000, // 14 days (strength 4 -> 5)
+    30 * 24 * 60 * 60 * 1000, // 30 days
+    90 * 24 * 60 * 60 * 1000, // 90 days
+  ];
+
+  // Cap strength at the max interval length
+  const intervalIndex = Math.min(strength, intervals.length - 1);
+  const millisecondsToAdd = intervals[intervalIndex];
+
+  return new Date(now.getTime() + millisecondsToAdd);
+};
+
+/**
+ * Gets all flashcards due for review for a user.
+ */
+export const getDueFlashcards = async (userId) => {
+  const now = new Date();
+
+  // 1. Get cards already in the user's study deck that are due
+  const dueCards = await prisma.userFlashcardStudy.findMany({
+    where: {
+      userId: userId,
+      nextReviewAt: {
+        lte: now, // Less than or equal to now
+      },
+    },
+    include: {
+      flashcard: true, // Include the Q&A text
+    },
+    orderBy: {
+      nextReviewAt: "asc", // Show most overdue first
+    },
+  });
+
+  // 2. Get new cards from topics the user has learned
+  const learnedTopics = await prisma.learningHistory.findMany({
+    where: { userId: userId, hasLearned: true },
+    select: { topicId: true },
+  });
+  const learnedTopicIds = learnedTopics.map((t) => t.topicId);
+
+  if (learnedTopicIds.length === 0) {
+    // No learned topics, just return the cards they are already studying
+    return dueCards.map((study) => study.flashcard);
+  }
+
+  // Find flashcards for learned topics that the user has *not* studied yet
+  const newFlashcards = await prisma.flashcard.findMany({
+    where: {
+      topicId: {
+        in: learnedTopicIds,
+      },
+      userStudies: {
+        none: {
+          userId: userId,
+        },
+      },
+    },
+  });
+
+  // 3. Combine and return
+  // We return the full flashcard object. The frontend will map this.
+  const allDueFlashcards = [
+    ...dueCards.map((study) => study.flashcard),
+    ...newFlashcards,
+  ];
+
+  // Simple shuffle to mix new and due cards
+  return allDueFlashcards.sort(() => Math.random() - 0.5);
+};
+
+/**
+ * Reviews a single flashcard and updates its next review date.
+ * Rating: 0 = 'Again', 1 = 'Good', 2 = 'Easy'
+ */
+export const reviewFlashcard = async (userId, flashcardId, rating) => {
+  const study = await prisma.userFlashcardStudy.upsert({
+    where: {
+      userId_flashcardId: {
+        userId: userId,
+        flashcardId: flashcardId,
+      },
+    },
+    // Create a new study record if this is the first time seeing this card
+    create: {
+      userId: userId,
+      flashcardId: flashcardId,
+      strength: 0,
+      lastReviewed: new Date(),
+      nextReviewAt: new Date(), // Will be updated below
+    },
+    // Or update the existing one
+    update: {},
+  });
+
+  let newStrength = study.strength;
+
+  switch (rating) {
+    case 0: // 'Again'
+      newStrength = 0; // Reset strength
+      break;
+    case 1: // 'Good'
+      newStrength += 1; // Increment strength
+      break;
+    case 2: // 'Easy'
+      newStrength += 2; // Increment strength by 2
+      break;
+    default:
+      throw new Error("Invalid rating. Must be 0, 1, or 2.");
+  }
+
+  const nextReviewAt = calculateNextReview(newStrength);
+
+  // Update the study record with new strength and next review date
+  return prisma.userFlashcardStudy.update({
+    where: {
+      id: study.id,
+    },
+    data: {
+      strength: newStrength,
+      lastReviewed: new Date(),
+      nextReviewAt: nextReviewAt,
+    },
+  });
 };

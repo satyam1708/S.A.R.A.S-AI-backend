@@ -183,3 +183,28 @@ export const submitQuizForTopic = async (req, res, next) => {
     next(error);
   }
 };
+export const getDueFlashcardsController = async (req, res, next) => {
+  try {
+    const { id: userId } = req.user;
+    const cards = await GsService.getDueFlashcards(userId);
+    res.json(cards);
+  } catch (error) {
+    next(error);
+  }
+};
+
+export const reviewFlashcardController = async (req, res, next) => {
+  try {
+    const { id: userId } = req.user;
+    const { flashcardId, rating } = req.body; // rating: 0, 1, or 2
+
+    if (flashcardId == null || rating == null) {
+      return res.status(400).json({ message: 'flashcardId and rating are required.' });
+    }
+
+    await GsService.reviewFlashcard(userId, parseInt(flashcardId), parseInt(rating));
+    res.status(200).json({ message: 'Review recorded.' });
+  } catch (error) {
+    next(error);
+  }
+};

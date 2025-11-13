@@ -250,3 +250,58 @@ ${fullText}
     throw new Error("Failed to get AI-generated content blocks.");
   }
 };
+
+export const generateFlashcardsFromContent = async (context) => {
+  if (!client) {
+    throw new Error("AI client is not initialized.");
+  }
+
+  const messages = [
+    {
+      role: "system",
+      content: `You are an expert study assistant for Indian government exams (UPSC, SSC).
+Based ONLY on the CONTEXT provided, generate 5-10 simple, factual "question and answer" pairs for flashcards.
+Questions should be simple (e.g., "What is X?", "When did Y happen?").
+Answers should be concise and directly answer the question.
+The entire response must be a single, valid JSON object in the following format:
+{
+  "flashcards": [
+    {
+      "question": "What is the capital of France?",
+      "answer": "Paris."
+    },
+    ... 5-10 flashcards total ...
+  ]
+}
+Do not include any text, markdown, or explanation outside of this single JSON object.`,
+    },
+    {
+      role: "user",
+      content: `CONTEXT:
+---
+${context}
+---`
+    }
+  ];
+
+  try {
+    const result = await client.chat.completions.create({
+      messages: messages,
+      max_tokens: 2000,
+      response_format: { type: "json_object" },
+    });
+    
+    const jsonString = result.choices[0].message.content;
+    const parsed = JSON.parse(jsonString);
+    
+    if (!parsed.flashcards || !Array.isArray(parsed.flashcards)) {
+      throw new Error("AI returned invalid flashcard format.");
+    }
+    
+    return parsed.flashcards; // Returns the array of { question, answer } objects
+
+  } catch (error) {
+    console.error("Error generating flashcards:", error);
+    throw new Error("Failed to get AI-generated flashcards.");
+  }
+};

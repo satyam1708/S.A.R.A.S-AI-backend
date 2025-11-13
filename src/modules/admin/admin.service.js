@@ -1,6 +1,6 @@
 // src/modules/admin/admin.service.js
 import prisma from '../../lib/prisma.js';
-import { generateQuizFromContent, chunkContentForLearning } from '../../services/aiService.js';
+import { generateQuizFromContent, chunkContentForLearning,generateFlashcardsFromContent } from '../../services/aiService.js';
 
 // --- Subject Management ---
 export const createSubject = (name) => {
@@ -92,6 +92,26 @@ export const generateQuiz = async (topicId) => {
     },
   });
 
+  generateFlashcardsFromContent(context)
+    .then(async (flashcards) => {
+      if (flashcards && flashcards.length > 0) {
+        const flashcardData = flashcards.map(fc => ({
+          topicId: topicId,
+          question: fc.question,
+          answer: fc.answer,
+        }));
+        
+        // Save all new flashcards
+        await prisma.flashcard.createMany({
+          data: flashcardData,
+          skipDuplicates: true, // Avoid re-creating identical Q&A pairs
+        });
+        console.log(`[Admin] Successfully generated ${flashcards.length} flashcards for topic ${topicId}`);
+      }
+    })
+    .catch(err => {
+      console.error(`[Admin] Failed to generate flashcards for topic ${topicId}: ${err.message}`);
+    });
   return newQuiz;
 };
 
