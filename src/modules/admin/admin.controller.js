@@ -1,6 +1,7 @@
 // src/modules/admin/admin.controller.js
 import * as AdminService from './admin.service.js';
 
+// --- Subject Management ---
 export const createSubject = async (req, res) => {
   try {
     const subject = await AdminService.createSubject(req.body.name);
@@ -19,6 +20,7 @@ export const getSubjects = async (req, res) => {
   }
 };
 
+// --- Topic Management ---
 export const createTopic = async (req, res) => {
   try {
     const { name, subjectId } = req.body;
@@ -38,6 +40,7 @@ export const getTopicsBySubject = async (req, res) => {
   }
 };
 
+// --- Content Management ---
 export const addContentBlock = async (req, res) => {
   try {
     const { topicId, content } = req.body;
@@ -61,6 +64,38 @@ export const deleteContentBlock = async (req, res) => {
   try {
     await AdminService.deleteContent(parseInt(req.params.blockId));
     res.status(200).json({ message: 'Content block deleted' });
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+};
+
+// --- [NEW] Quiz Management ---
+
+export const generateQuizForTopic = async (req, res) => {
+  try {
+    const { topicId } = req.params;
+    const quiz = await AdminService.generateQuiz(parseInt(topicId));
+    res.status(201).json(quiz);
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+};
+
+export const getQuizForTopic = async (req, res) => {
+  try {
+    const { topicId } = req.params;
+    const quiz = await AdminService.getQuiz(parseInt(topicId));
+    res.json(quiz);
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+};
+
+export const deleteQuiz = async (req, res) => {
+  try {
+    const { quizId } = req.params;
+    await AdminService.deleteQuiz(parseInt(quizId));
+    res.status(200).json({ message: 'Quiz deleted' });
   } catch (error) {
     res.status(500).json({ message: error.message });
   }

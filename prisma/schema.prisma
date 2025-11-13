@@ -15,7 +15,7 @@ datasource db {
 }
 
 model User {
-  id               Int               @id @default(autoincrement())
+  id                Int               @id @default(autoincrement())
   name              String
   email             String            @unique
   password          String
@@ -23,6 +23,7 @@ model User {
   bookmarks         Bookmark[]
   chatSessions      ChatSession[]
   learningHistories LearningHistory[]
+  quizAttempts      UserQuizAttempt[] // <-- Link to quiz attempts
 }
 
 model Bookmark {
@@ -47,13 +48,14 @@ model Subject {
 
 // Sub-categories, e.g., "Mughal Empire", "Rivers of India"
 model Topic {
-  id        Int               @id @default(autoincrement())
-  name      String
-  subject   Subject           @relation(fields: [subjectId], references: [id])
-  subjectId Int
-  content   ContentBlock[]
-  learnedBy LearningHistory[]
-  chatSessions      ChatSession[] // <-- 1. CHANGED THIS
+  id           Int               @id @default(autoincrement())
+  name         String
+  subject      Subject           @relation(fields: [subjectId], references: [id])
+  subjectId    Int
+  content      ContentBlock[]
+  learnedBy    LearningHistory[]
+  chatSessions ChatSession[]
+  quiz         Quiz? // <-- Each topic can have one quiz
 }
 
 // The raw knowledge snippets for the AI to learn from
@@ -66,11 +68,12 @@ model ContentBlock {
 
 // Tracks what a user has "learned" for revision
 model LearningHistory {
-  id      Int   @id @default(autoincrement())
-  user    User  @relation(fields: [userId], references: [id])
-  userId  Int
-  topic   Topic @relation(fields: [topicId], references: [id])
-  topicId Int
+  id         Int     @id @default(autoincrement())
+  user       User    @relation(fields: [userId], references: [id])
+  userId     Int
+  topic      Topic   @relation(fields: [topicId], references: [id])
+  topicId    Int
+  hasLearned Boolean @default(true) // Added for clarity
 
   @@unique([userId, topicId]) // A user can only learn a topic once
 }
@@ -80,12 +83,12 @@ model LearningHistory {
 model ChatSession {
   id       Int           @id @default(autoincrement())
   user     User          @relation(fields: [userId], references: [id])
-  userId   Int // <-- 2. REMOVED @unique
+  userId   Int
   topic    Topic         @relation(fields: [topicId], references: [id])
-  topicId  Int // <-- 3. REMOVED @unique
+  topicId  Int
   messages ChatMessage[]
 
-  @@unique([userId, topicId]) // <-- 4. ADDED THIS (THE FIX)**
+  @@unique([userId, topicId])
 }
 
 model ChatMessage {
@@ -106,4 +109,51 @@ model CachedBroadcast {
   updatedAt DateTime @updatedAt
 
   @@unique([category, language]) // Only one cache entry per category/language combo
+}
+
+// --- [NEW] Quiz System Models ---
+
+// The quiz itself, linked to a topic
+model Quiz {
+  id        Int               @id @default(autoincrement())
+  topic     Topic             @relation(fields: [topicId], references: [id], onDelete: Cascade)
+  topicId   Int               @unique // A topic can only have one quiz
+  questions Question[]
+  attempts  UserQuizAttempt[]
+  createdAt DateTime          @default(now())
+}
+
+// A single question in a quiz
+model Question {
+  id                 Int          @id @default(autoincrement())
+  quiz               Quiz         @relation(fields: [quizId], references: [id], onDelete: Cascade)
+  quizId             Int
+  questionText       String
+  options            Json // Stores ["Option A", "Option B", "Option C", "Option D"]
+  correctAnswerIndex Int // Stores 0, 1, 2, or 3
+  answers            UserAnswer[]
+}
+
+// A user's attempt at a full quiz
+model UserQuizAttempt {
+  id          Int          @id @default(autoincrement())
+  user        User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId      Int
+  quiz        Quiz         @relation(fields: [quizId], references: [id], onDelete: Cascade)
+  quizId      Int
+  score       Int // e.g., 8
+  total       Int // e.g., 10
+  completedAt DateTime     @default(now())
+  answers     UserAnswer[] // The specific answers for this attempt
+}
+
+// A user's specific answer to a question
+model UserAnswer {
+  id                  Int             @id @default(autoincrement())
+  attempt             UserQuizAttempt @relation(fields: [attemptId], references: [id], onDelete: Cascade)
+  attemptId           Int
+  question            Question        @relation(fields: [questionId], references: [id], onDelete: Cascade)
+  questionId          Int
+  selectedAnswerIndex Int // The user's choice (0-3)
+  isCorrect           Boolean
 }

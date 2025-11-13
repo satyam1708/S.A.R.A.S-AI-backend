@@ -22,4 +22,9 @@ router.post('/content', AdminController.addContentBlock); // expects { topicId, 
 router.get('/content/:topicId', AdminController.getContentForTopic);
 router.delete('/content/:blockId', AdminController.deleteContentBlock);
 
+// --- [NEW] Quiz Routes ---
+router.post('/quiz/generate/:topicId', AdminController.generateQuizForTopic);
+router.get('/quiz/:topicId', AdminController.getQuizForTopic);
+router.delete('/quiz/:quizId', AdminController.deleteQuiz);
+
 export default router;

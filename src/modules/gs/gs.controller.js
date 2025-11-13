@@ -84,7 +84,8 @@ export const markTopicAsLearned = async (req, res, next) => {
     const { topicId } = req.params;
     await GsService.markTopicAsLearned(req.user.id, parseInt(topicId));
     res.status(200).json({ message: 'Topic marked as learned.' });
-  } catch (error) {
+  } catch (error)
+ {
     next(error);
   }
 };
@@ -114,6 +115,36 @@ export const createChatFromContext = async (req, res, next) => {
 
     // Return the newly created topic. The frontend will use its ID.
     res.status(201).json(newTopic);
+  } catch (error) {
+    next(error);
+  }
+};
+
+
+// --- [NEW] Quiz Functions for Students ---
+
+export const getQuizForTopic = async (req, res, next) => {
+  try {
+    const { topicId } = req.params;
+    const quiz = await GsService.getQuiz(parseInt(topicId));
+    res.json(quiz);
+  } catch (error) {
+    next(error);
+  }
+};
+
+export const submitQuizForTopic = async (req, res, next) => {
+  try {
+    const { quizId } = req.params;
+    const { answers } = req.body; // Expects: [{ questionId: 1, selectedAnswerIndex: 2 }, ...]
+    const { id: userId } = req.user;
+
+    const results = await GsService.submitQuiz(
+      userId,
+      parseInt(quizId),
+      answers
+    );
+    res.json(results);
   } catch (error) {
     next(error);
   }

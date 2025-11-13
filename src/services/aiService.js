@@ -23,6 +23,66 @@ if (!endpoint || !azureApiKey || !deployment) {
   });
 }
 
+/**
+ * [NEW] Generates a 10-question MCQ quiz from provided content.
+ */
+export const generateQuizFromContent = async (context) => {
+  if (!client) {
+    throw new Error("AI client is not initialized.");
+  }
+
+  const messages = [
+    {
+      role: "system",
+      content: `You are an expert quiz creator for Indian government exams (UPSC, SSC, UP POLICE).
+Based ONLY on the CONTEXT provided, generate 10 high-quality Multiple Choice Questions (MCQs).
+Each question must have exactly 4 options.
+The entire response must be a single, valid JSON object in the following format:
+{
+  "quiz": [
+    {
+      "questionText": "What is the capital of France?",
+      "options": ["Berlin", "Madrid", "Paris", "Rome"],
+      "correctAnswerIndex": 2
+    },
+    ... 10 questions total ...
+  ]
+}
+Do not include any text, markdown, or explanation outside of this single JSON object.`,
+    },
+    {
+      role: "user",
+      content: `CONTEXT:
+---
+${context}
+---`
+    }
+  ];
+
+  try {
+    const result = await client.chat.completions.create({
+      messages: messages,
+      max_tokens: 4000, // Increase token limit to ensure 10 questions can fit
+      response_format: { type: "json_object" }, // Use explicit JSON mode
+    });
+    
+    const jsonString = result.choices[0].message.content;
+    
+    // Parse the JSON and return the array of questions
+    const parsed = JSON.parse(jsonString);
+    if (!parsed.quiz || !Array.isArray(parsed.quiz)) {
+      throw new Error("AI returned invalid quiz format.");
+    }
+    
+    return parsed.quiz; // Returns the array of question objects
+
+  } catch (error) {
+    console.error("Error generating quiz:", error);
+    throw new Error("Failed to get AI-generated quiz.");
+  }
+};
+
+
 export const summarizeArticle = async (articleContent) => {
   if (!client) {
     throw new Error("AI client is not initialized. Check server logs for errors.");

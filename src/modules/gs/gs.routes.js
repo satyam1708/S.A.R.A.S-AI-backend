@@ -7,6 +7,8 @@ import {
   markTopicAsLearned,
   getRevision,
   createChatFromContext,
+  getQuizForTopic,    // <-- [NEW]
+  submitQuizForTopic, // <-- [NEW]
 } from './gs.controller.js';
 import { authMiddleware } from '../../middleware/auth.middleware.js';
 
@@ -27,5 +29,10 @@ gsRouter.post('/chat/:topicId', authMiddleware, postMessage);
 gsRouter.post('/chat/stream/:topicId', authMiddleware, streamMessage);
 gsRouter.post('/learn/:topicId', authMiddleware, markTopicAsLearned);
 gsRouter.get('/revise', authMiddleware, getRevision);
+
+// --- [NEW] Quiz Routes for Students ---
+gsRouter.get('/quiz/:topicId', authMiddleware, getQuizForTopic);
+gsRouter.post('/quiz/submit/:quizId', authMiddleware, submitQuizForTopic);
+
 
 export default gsRouter;
