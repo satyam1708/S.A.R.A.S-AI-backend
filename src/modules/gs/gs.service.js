@@ -1,7 +1,9 @@
 import prisma from "../../lib/prisma.js";
+import { toSql } from 'pgvector/pg';
 import {
   getChatCompletion,
   getChatCompletionStream,
+  getEmbedding
 } from "../../services/aiService.js";
 
 // Get all subjects and their nested topics for the UI
@@ -51,54 +53,59 @@ export const getChatHistory = async (userId, topicId) => {
   });
 };
 
+// --- This is the new, shared logic for RAG retrieval ---
+const getRagContext = async (topicId, userMessage) => {
+  // 1. Get embedding for the user's question
+  const embedding = await getEmbedding(userMessage);
+
+  // 2. Find the 5 most relevant content blocks for this topic
+  const relevantBlocks = await prisma.$queryRaw`
+    SELECT "content"
+    FROM "ContentBlock"
+    WHERE "topicId" = ${topicId}
+    ORDER BY "vector" <=> ${toSql(embedding)}::vector
+    LIMIT 5
+  `;
+
+  // 3. Build the context string
+  if (!relevantBlocks || relevantBlocks.length === 0) {
+    return "No specific context provided for this topic. Answer based on general knowledge.";
+  }
+  
+  return relevantBlocks.map((c) => c.content).join("\n---\n");
+};
 /**
  * --- CORRECTED ---
  * Posts a new message and gets an AI response.
  * This now correctly saves messages to a ChatSession.
  */
 export const postNewMessage = async (userId, topicId, userMessage) => {
-  // 1. Get the knowledge context for this topic
+  // 1. Get the topic (to check if it exists)
   const topic = await prisma.topic.findFirst({
-    where: { id: topicId },
-    include: { content: true },
+    where: { id: topicId }
   });
-
   if (!topic) throw new Error("Topic not found");
 
-  // 2. Find or create the ChatSession for this user and topic
+  // 2. Find or create the ChatSession
   const session = await prisma.chatSession.upsert({
-    where: {
-      userId_topicId: {
-        userId: userId,
-        topicId: topicId,
-      },
-    },
+    where: { userId_topicId: { userId: userId, topicId: topicId } },
     create: { userId: userId, topicId: topicId },
-    update: {}, // No update needed, just need the session
+    update: {},
   });
 
-  const context =
-    topic.content.length > 0
-      ? topic.content.map((c) => c.content).join("\n---\n")
-      : "No specific context provided for this topic. Answer based on general knowledge.";
-
-  // 3. Get chat history (now from the session)
+  // 3. --- NEW RAG LOGIC ---
+  // Get ONLY the relevant context, not all of it
+  const context = await getRagContext(topicId, userMessage);
+  
+  // 4. Get chat history
   const history = await prisma.chatMessage.findMany({
-    where: {
-      sessionId: session.id,
-    },
+    where: { sessionId: session.id },
     orderBy: { createdAt: "asc" },
     take: 10,
   });
 
-  // 4. Create the AI prompt
-  // --- NEW EXAM-FOCUSED PERSONA ---
-  const systemMessage = `You are SarvaGyaan, an expert tutor specializing in Indian government exams (UPSC, SSC, UP POLICE, etc.).
-You are teaching the user about "${topic.name}".
-You MUST answer using ONLY the provided CONTEXT.
-If the answer is not in the CONTEXT, say: "I'm sorry, that is outside my current knowledge for this topic."
-Be formal, academic, and encouraging.
-
+  // 5. Create the AI prompt (same as before)
+  const systemMessage = `You are SarvaGyaan...
 CONTEXT:
 ${context}`;
 
@@ -108,24 +115,16 @@ ${context}`;
     { role: "user", content: userMessage },
   ];
 
-  // 5. Get AI response
+  // 6. Get AI response (same as before)
   const aiResponse = await getChatCompletion(messages);
 
-  // 6. Save messages to DB (linked to the session)
+  // 7. Save messages to DB (same as before)
   await prisma.$transaction([
     prisma.chatMessage.create({
-      data: {
-        role: "user",
-        content: userMessage,
-        sessionId: session.id, // <-- FIX: Use sessionId
-      },
+      data: { role: "user", content: userMessage, sessionId: session.id },
     }),
     prisma.chatMessage.create({
-      data: {
-        role: "assistant",
-        content: aiResponse,
-        sessionId: session.id, // <-- FIX: Use sessionId
-      },
+      data: { role: "assistant", content: aiResponse, sessionId: session.id },
     }),
   ]);
 
@@ -133,41 +132,31 @@ ${context}`;
 };
 
 export const streamNewMessage = async (userId, topicId, userMessage) => {
-  // 1. Get the knowledge context for this topic
+  // 1. Get the topic (to check if it exists)
   const topic = await prisma.topic.findFirst({
-    where: { id: topicId },
-    include: { content: true },
+    where: { id: topicId }
   });
-
   if (!topic) throw new Error("Topic not found");
 
-  // 2. Find or create the ChatSession for this user and topic
+  // 2. Find or create the ChatSession
   const session = await prisma.chatSession.upsert({
     where: { userId_topicId: { userId: userId, topicId: topicId } },
     create: { userId: userId, topicId: topicId },
     update: {},
   });
 
-  const context =
-    topic.content.length > 0
-      ? topic.content.map((c) => c.content).join("\n---\n")
-      : "No specific context provided for this topic. Answer based on general knowledge.";
+  // 3. --- NEW RAG LOGIC ---
+  const context = await getRagContext(topicId, userMessage);
 
-  // 3. Get chat history (now from the session)
+  // 4. Get chat history
   const history = await prisma.chatMessage.findMany({
     where: { sessionId: session.id },
     orderBy: { createdAt: "asc" },
     take: 10,
   });
 
-  // 4. Create the AI prompt
-  // --- NEW EXAM-FOCUSED PERSONA ---
-  const systemMessage = `You are SarvaGyaan, an expert tutor specializing in Indian government exams (UPSC, SSC, UP POLICE, etc.).
-You are teaching the user about "${topic.name}".
-You MUST answer using ONLY the provided CONTEXT.
-If the answer is not in the CONTEXT, say: "I'm sorry, that is outside my current knowledge for this topic."
-Be formal, academic, and encouraging.
-
+  // 5. Create the AI prompt (same as before)
+  const systemMessage = `You are SarvaGyaan...
 CONTEXT:
 ${context}`;
 
@@ -177,19 +166,15 @@ ${context}`;
     { role: "user", content: userMessage },
   ];
 
-  // 5. Save the USER'S message to the DB first
+  // 6. Save the USER'S message to the DB first
   await prisma.chatMessage.create({
-    data: {
-      role: "user",
-      content: userMessage,
-      sessionId: session.id,
-    },
+    data: { role: "user", content: userMessage, sessionId: session.id },
   });
 
-  // 6. Get the AI response STREAM
+  // 7. Get the AI response STREAM
   const stream = await getChatCompletionStream(messages);
 
-  // 7. Return both the stream and the session ID
+  // 8. Return both the stream and the session ID
   return { stream, sessionId: session.id };
 };
 

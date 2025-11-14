@@ -1,5 +1,7 @@
 // src/modules/admin/admin.controller.js
 import * as AdminService from './admin.service.js';
+import * as pdfParse from 'pdf-parse';
+import * as mammoth from 'mammoth'
 
 // --- Subject Management ---
 export const createSubject = async (req, res) => {
@@ -112,12 +114,34 @@ export const uploadBookContent = async (req, res) => {
     const file = req.file;
 
     if (!file) {
-      return res.status(400).json({ message: 'No .txt file was uploaded.' });
+      return res.status(400).json({ message: 'No file was uploaded.' });
     }
 
-    const count = await AdminService.processBookUpload(parseInt(topicId), file.buffer);
+    let fileBuffer;
+    
+    // --- NEW LOGIC TO PARSE DIFFERENT FILE TYPES ---
+    if (file.mimetype === 'application/pdf') {
+      // --- THIS IS THE FIX ---
+      // Call the function on the '.default' property
+      const data = await pdfParse.default(file.buffer);
+      // --- END OF FIX ---
+      fileBuffer = Buffer.from(data.text, 'utf-8');
+    } else if (file.mimetype === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document') {
+      // --- THIS IS THE FIX ---
+      // Call the function on the '.default' property
+      const { value } = await mammoth.default.extractRawText({ buffer: file.buffer });
+      // --- END OF FIX ---
+      fileBuffer = Buffer.from(value, 'utf-8');
+    } else {
+      // It's a .txt file, just use the buffer
+      fileBuffer = file.buffer;
+    }
+    // --- END OF NEW LOGIC ---
+
+    const count = await AdminService.processBookUpload(parseInt(topicId), fileBuffer);
     res.status(201).json({ message: `Successfully added ${count} new content blocks.`, count });
   } catch (error) {
+    console.error("Upload Error:", error); 
     res.status(500).json({ message: error.message });
   }
 };

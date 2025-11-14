@@ -7,11 +7,13 @@
 generator client {
   provider = "prisma-client-js"
   // output   = "../generated/prisma"
+  previewFeatures = ["postgresqlExtensions"]
 }
 
 datasource db {
   provider = "postgresql"
   url      = env("DATABASE_URL")
+  extensions = [vector]
 }
 
 model User {
@@ -66,6 +68,9 @@ model ContentBlock {
   content String @db.Text
   topic   Topic  @relation(fields: [topicId], references: [id])
   topicId Int
+  // --- ADD THIS FIELD ---
+  // 1536 is the dimension for OpenAI's 'text-embedding-ada-002' model
+  vector  Unsupported("vector(1536)")?
 }
 
 // Tracks what a user has "learned" for revision

@@ -1,7 +1,7 @@
 // src/modules/admin/admin.service.js
 import prisma from '../../lib/prisma.js';
-import { generateQuizFromContent, chunkContentForLearning,generateFlashcardsFromContent } from '../../services/aiService.js';
-
+import { generateQuizFromContent, chunkContentForLearning,generateFlashcardsFromContent,getEmbedding } from '../../services/aiService.js';
+import { toSql } from 'pgvector/pg';
 // --- Subject Management ---
 export const createSubject = (name) => {
   return prisma.subject.create({ data: { name } });
@@ -26,8 +26,19 @@ export const getTopics = (subjectId) => {
 };
 
 // --- Content Management ---
-export const addContent = (topicId, content) => {
-  return prisma.contentBlock.create({ data: { topicId, content } });
+export const addContent = async (topicId, content) => {
+  // 1. Get embedding first
+  const vector = await getEmbedding(content);
+
+  // 2. Create the block with the vector
+  return prisma.contentBlock.create({ 
+    data: { 
+      topicId, 
+      content,
+      // Use the toSql helper to format the vector for Prisma
+      vector: toSql(vector) 
+    } 
+  });
 };
 
 export const getContent = (topicId) => {
@@ -144,30 +155,41 @@ export const deleteQuiz = (quizId) => {
 };
 
 export const processBookUpload = async (topicId, fileBuffer) => {
-  // 1. Read the text from the file buffer
+  // 1. Read the text from the file buffer (you already have this)
   const fullText = fileBuffer.toString('utf-8');
   if (!fullText.trim()) {
     throw new Error('Uploaded file is empty.');
   }
 
-  // 2. Call AI service to chunk the content
+  // 2. Call AI service to chunk the content (you already have this)
   const contentChunks = await chunkContentForLearning(fullText);
 
   if (!contentChunks || contentChunks.length === 0) {
     throw new Error('AI failed to process the document into blocks.');
   }
 
-  // 3. Prepare data for batch-creation
-  const blocksToCreate = contentChunks.map(chunk => ({
-    content: chunk,
-    topicId: topicId,
-  }));
+  // 3. --- THIS IS THE NEW LOGIC ---
+  // Instead of createMany, we loop and create one-by-one to get embeddings
+  let createdCount = 0;
+  for (const chunk of contentChunks) {
+    try {
+      // 3a. Get embedding for the chunk
+      const vector = await getEmbedding(chunk);
+      
+      // 3b. Create the block with its vector
+      await prisma.contentBlock.create({
+        data: {
+          content: chunk,
+          topicId: topicId,
+          vector: toSql(vector)
+        }
+      });
+      createdCount++;
+    } catch (err) {
+      console.error(`Failed to create block for chunk: ${chunk.substring(0, 20)}...`, err);
+    }
+  }
 
-  // 4. Save all new blocks to the database in a single transaction
-  const result = await prisma.contentBlock.createMany({
-    data: blocksToCreate,
-  });
-
-  // 5. Return the number of blocks created
-  return result.count;
+  // 4. Return the number of blocks successfully created
+  return createdCount;
 };

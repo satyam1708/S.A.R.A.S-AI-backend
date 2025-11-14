@@ -5,11 +5,12 @@ import { AzureOpenAI } from 'openai'; // <-- CORRECTED IMPORT
 const endpoint = process.env.AZURE_OPENAI_ENDPOINT;
 const azureApiKey = process.env.AZURE_OPENAI_KEY;
 // This is the DEPLOYMENT NAME for your chat model (gpt-4o-mini)
-const deployment = process.env.AZURE_OPENAI_CHAT_DEPLOYMENT; 
+const chatDeployment = process.env.AZURE_OPENAI_CHAT_DEPLOYMENT; 
+const embeddingDeployment = process.env.AZURE_OPENAI_EMBEDDING_DEPLOYMENT;
 
 let client;
 
-if (!endpoint || !azureApiKey || !deployment) {
+if (!endpoint || !azureApiKey || !chatDeployment || !embeddingDeployment) {
   console.error("❌ ERROR: Azure OpenAI environment variables (ENDPOINT, KEY, CHAT_DEPLOYMENT) are not set.");
 } else {
   // CORRECTED Client Initialization based on your example
@@ -19,7 +20,7 @@ if (!endpoint || !azureApiKey || !deployment) {
     // This api-version is standard, but you can change if yours is different
     apiVersion: "2024-05-01-preview", 
     // The deployment name is passed as a default here
-    deployment, 
+    chatDeployment, 
   });
 }
 
@@ -61,6 +62,7 @@ ${context}
 
   try {
     const result = await client.chat.completions.create({
+      deployment: chatDeployment,
       messages: messages,
       max_tokens: 4000, // Increase token limit to ensure 10 questions can fit
       response_format: { type: "json_object" }, // Use explicit JSON mode
@@ -98,6 +100,7 @@ export const summarizeArticle = async (articleContent) => {
     // CORRECTED API Call (using .create)
     // We don't need to pass the deployment name here since it was set in the client
     const result = await client.chat.completions.create({
+      deployment: chatDeployment,
       messages: messages,
       max_tokens: 200, // Increased max tokens for better summaries
     });
@@ -303,5 +306,21 @@ ${context}
   } catch (error) {
     console.error("Error generating flashcards:", error);
     throw new Error("Failed to get AI-generated flashcards.");
+  }
+};
+export const getEmbedding = async (text) => {
+  if (!client) {
+    throw new Error("AI client is not initialized.");
+  }
+  try {
+    const result = await client.embeddings.create({
+      // Use the new deployment name
+      deployment: embeddingDeployment, 
+      input: text,
+    });
+    return result.data[0].embedding; // Returns the vector array
+  } catch (error) {
+    console.error("Error getting embedding:", error);
+    throw new Error("Failed to get AI embedding.");
   }
 };
