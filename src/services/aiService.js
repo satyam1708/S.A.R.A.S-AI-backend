@@ -1,26 +1,45 @@
 // aiService.js
-import { AzureOpenAI } from 'openai'; // <-- CORRECTED IMPORT
+import { AzureOpenAI } from "openai";
 
 // Get credentials from environment
-const endpoint = process.env.AZURE_OPENAI_ENDPOINT;
 const azureApiKey = process.env.AZURE_OPENAI_KEY;
-// This is the DEPLOYMENT NAME for your chat model (gpt-4o-mini)
-const chatDeployment = process.env.AZURE_OPENAI_CHAT_DEPLOYMENT; 
+
+// Chat client variables
+const chatEndpoint = process.env.AZURE_OPENAI_ENDPOINT;
+const chatDeployment = process.env.AZURE_OPENAI_CHAT_DEPLOYMENT;
+
+// Embedding client variables
+const embeddingEndpoint = process.env.AZURE_OPENAI_EMBEDDING_ENDPOINT;
 const embeddingDeployment = process.env.AZURE_OPENAI_EMBEDDING_DEPLOYMENT;
 
-let client;
+let chatClient;
+let embeddingClient;
 
-if (!endpoint || !azureApiKey || !chatDeployment || !embeddingDeployment) {
-  console.error("❌ ERROR: Azure OpenAI environment variables (ENDPOINT, KEY, CHAT_DEPLOYMENT) are not set.");
+// --- Initialize Chat Client ---
+if (!chatEndpoint || !azureApiKey || !chatDeployment) {
+  console.error(
+    "❌ ERROR: Azure OpenAI Chat environment variables (ENDPOINT, KEY, CHAT_DEPLOYMENT) are not set."
+  );
 } else {
-  // CORRECTED Client Initialization based on your example
-  client = new AzureOpenAI({
-    endpoint,
+  chatClient = new AzureOpenAI({
+    endpoint: chatEndpoint, // <-- Use Chat Endpoint
     apiKey: azureApiKey,
-    // This api-version is standard, but you can change if yours is different
-    apiVersion: "2024-05-01-preview", 
-    // The deployment name is passed as a default here
-    chatDeployment, 
+    apiVersion: "2024-05-01-preview",
+    deployment: chatDeployment, // This is the deployment name for THIS client
+  });
+}
+
+// --- Initialize Embedding Client ---
+if (!embeddingEndpoint || !azureApiKey || !embeddingDeployment) {
+  console.error(
+    "❌ ERROR: Azure OpenAI Embedding environment variables (EMBEDDING_ENDPOINT, KEY, EMBEDDING_DEPLOYMENT) are not set."
+  );
+} else {
+  embeddingClient = new AzureOpenAI({
+    endpoint: embeddingEndpoint, // <-- Use Embedding Endpoint
+    apiKey: azureApiKey,
+    apiVersion: "2024-05-01-preview",
+    deployment: embeddingDeployment, // This is the deployment name for THIS client
   });
 }
 
@@ -28,8 +47,9 @@ if (!endpoint || !azureApiKey || !chatDeployment || !embeddingDeployment) {
  * [NEW] Generates a 10-question MCQ quiz from provided content.
  */
 export const generateQuizFromContent = async (context) => {
-  if (!client) {
-    throw new Error("AI client is not initialized.");
+  if (!chatClient) {
+    // <-- Check for chatClient
+    throw new Error("AI chat client is not initialized.");
   }
 
   const messages = [
@@ -56,53 +76,54 @@ Do not include any text, markdown, or explanation outside of this single JSON ob
       content: `CONTEXT:
 ---
 ${context}
----`
-    }
+---`,
+    },
   ];
 
   try {
-    const result = await client.chat.completions.create({
-      deployment: chatDeployment,
+    // Use chatClient. No 'deployment' param needed.
+    const result = await chatClient.chat.completions.create({
       messages: messages,
-      max_tokens: 4000, // Increase token limit to ensure 10 questions can fit
-      response_format: { type: "json_object" }, // Use explicit JSON mode
+      max_tokens: 4000,
+      response_format: { type: "json_object" },
     });
-    
+
     const jsonString = result.choices[0].message.content;
-    
-    // Parse the JSON and return the array of questions
+
     const parsed = JSON.parse(jsonString);
     if (!parsed.quiz || !Array.isArray(parsed.quiz)) {
       throw new Error("AI returned invalid quiz format.");
     }
-    
-    return parsed.quiz; // Returns the array of question objects
 
+    return parsed.quiz;
   } catch (error) {
     console.error("Error generating quiz:", error);
     throw new Error("Failed to get AI-generated quiz.");
   }
 };
 
-
 export const summarizeArticle = async (articleContent) => {
-  if (!client) {
-    throw new Error("AI client is not initialized. Check server logs for errors.");
+  if (!chatClient) {
+    // <-- Check for chatClient
+    throw new Error(
+      "AI chat client is not initialized. Check server logs for errors."
+    );
   }
 
-  // --- NEW EXAM-FOCUSED PERSONA ---
   const messages = [
-    { role: "system", content: "You are an expert news analyst for government exam (UPSC, SSC) aspirants. Summarize the article into 3-4 bullet points, focusing on facts, figures, locations, and policy implications relevant to these exams. Be objective and formal." },
+    {
+      role: "system",
+      content:
+        "You are an expert news analyst for government exam (UPSC, SSC) aspirants. Summarize the article into 3-4 bullet points, focusing on facts, figures, locations, and policy implications relevant to these exams. Be objective and formal.",
+    },
     { role: "user", content: articleContent },
   ];
 
   try {
-    // CORRECTED API Call (using .create)
-    // We don't need to pass the deployment name here since it was set in the client
-    const result = await client.chat.completions.create({
-      deployment: chatDeployment,
+    // Use chatClient
+    const result = await chatClient.chat.completions.create({
       messages: messages,
-      max_tokens: 200, // Increased max tokens for better summaries
+      max_tokens: 200,
     });
 
     return result.choices[0].message.content;
@@ -112,15 +133,15 @@ export const summarizeArticle = async (articleContent) => {
   }
 };
 
-
-// --- NEW FUNCTION for the GS Tutor ---
 export const getChatCompletion = async (messages) => {
-  if (!client) {
-    throw new Error("AI client is not initialized.");
+  if (!chatClient) {
+    // <-- Check for chatClient
+    throw new Error("AI chat client is not initialized.");
   }
 
   try {
-    const result = await client.chat.completions.create({
+    // Use chatClient
+    const result = await chatClient.chat.completions.create({
       messages: messages,
       max_tokens: 1000,
     });
@@ -132,32 +153,38 @@ export const getChatCompletion = async (messages) => {
 };
 
 export const getChatCompletionStream = async (messages) => {
-  if (!client) {
-    throw new Error("AI client is not initialized.");
+  if (!chatClient) {
+    // <-- Check for chatClient
+    throw new Error("AI chat client is not initialized.");
   }
 
   try {
-    const result = await client.chat.completions.create({
+    // Use chatClient
+    const result = await chatClient.chat.completions.create({
       messages: messages,
       max_tokens: 1000,
-      stream: true, // <-- This is the magic flag!
+      stream: true,
     });
-    return result; // Return the stream iterator
+    return result;
   } catch (error) {
     console.error("Error in getChatCompletionStream:", error);
     throw new Error("Failed to get AI chat stream.");
   }
 };
 
-
-export const generateNewsBroadcast = async (articlesContent, category, messages, language = 'en-US') => {
-  if (!client) {
-    throw new Error("AI client is not initialized.");
+export const generateNewsBroadcast = async (
+  articlesContent,
+  category,
+  messages,
+  language = "en-US"
+) => {
+  if (!chatClient) {
+    // <-- Check for chatClient
+    throw new Error("AI chat client is not initialized.");
   }
 
-  // --- NEW EXAM-FOCUSED PERSONA (REPLACED AI-JAY) ---
   let persona;
-  if (language === 'hi-IN') {
+  if (language === "hi-IN") {
     persona = `You are a formal news anchor for 'SarvaGyaan', an exam preparation platform. You are delivering the daily 'Current Affairs' briefing in Hinglish.
 
     Aapke rules:
@@ -185,15 +212,12 @@ export const generateNewsBroadcast = async (articlesContent, category, messages,
     You are generating a broadcast for the '${category}' category. Here are the articles:
     ${articlesContent}`;
   }
-  // --- END of new persona logic ---
 
-  const allMessages = [
-    { role: "system", content: persona },
-    ...messages,
-  ];
+  const allMessages = [{ role: "system", content: persona }, ...messages];
 
   try {
-    const result = await client.chat.completions.create({
+    // Use chatClient
+    const result = await chatClient.chat.completions.create({
       messages: allMessages,
       max_tokens: 1500,
     });
@@ -204,59 +228,89 @@ export const generateNewsBroadcast = async (articlesContent, category, messages,
   }
 };
 export const chunkContentForLearning = async (fullText) => {
-  if (!client) {
-    throw new Error("AI client is not initialized.");
-  }
+  if (!chatClient) throw new Error("AI chat client is not initialized.");
 
   const messages = [
     {
       role: "system",
-      content: `You are an AI text processor. Your job is to parse a large document and split it into an array of small, self-contained "Content Blocks" for a learning system.
-Each block should be a single paragraph, definition, or a few related sentences.
-The response must be a single, valid JSON object in the format:
+      content: `
+You split the provided text into meaningful learning blocks.
+
+BLOCK RULES:
+1. Each block should be 2–5 sentences.
+2. Blocks must be at least 250 characters.
+3. Blocks must NOT exceed 800 characters.
+4. Split only when the topic logically shifts.
+5. NEVER return numeric chunks, timestamps, or garbage values.
+
+Output must be STRICT JSON:
 {
-  "blocks": [
-    "This is the first logical chunk of text.",
-    "This is the second, separate concept from the text.",
-    "This is a third piece of information."
-  ]
+  "blocks": ["block1", "block2", ...]
 }
-Do not include any text, markdown, or explanation outside of this single JSON object.`,
+`,
     },
     {
       role: "user",
-      content: `Here is the full text to process:
----
-${fullText}
----`
-    }
+      content: fullText,
+    },
   ];
 
   try {
-    const result = await client.chat.completions.create({
-      messages: messages,
+    const result = await chatClient.chat.completions.create({
+      messages,
       max_tokens: 4000,
+      temperature: 0,
       response_format: { type: "json_object" },
     });
-    
-    const jsonString = result.choices[0].message.content;
-    const parsed = JSON.parse(jsonString);
-    
-    if (!parsed.blocks || !Array.isArray(parsed.blocks)) {
-      throw new Error("AI returned invalid block format.");
-    }
-    
-    return parsed.blocks; // Returns the array of content strings
 
+    const jsonString = result.choices[0].message.content;
+    console.log("AI chunk response:", jsonString);
+
+    if (!jsonString) throw new Error("Empty AI response.");
+
+    let { blocks } = JSON.parse(jsonString);
+
+    if (!blocks || !Array.isArray(blocks)) {
+      throw new Error("Invalid block format.");
+    }
+
+    // ----------------------------------------
+    // ⭐ POST-PROCESSING: SIZE NORMALIZATION ⭐
+    // ----------------------------------------
+
+    const normalized = [];
+
+    for (let block of blocks) {
+      if (!block || typeof block !== "string") continue;
+      block = block.trim();
+
+      // Skip if it's just a number or too tiny
+      if (block.length < 30 || !isNaN(Number(block))) continue;
+
+      // If block is too long → split
+      if (block.length > 900) {
+        let parts = block.match(/.{1,700}(\s|$)/g); // split by ~700 chars
+        normalized.push(...parts.map((p) => p.trim()));
+      }
+      // If block is too short → merge with previous
+      else if (block.length < 200 && normalized.length > 0) {
+        normalized[normalized.length - 1] += " " + block;
+      } else {
+        normalized.push(block);
+      }
+    }
+
+    return normalized;
   } catch (error) {
     console.error("Error chunking content:", error);
-    throw new Error("Failed to get AI-generated content blocks.");
+    throw new Error("Failed to generate content blocks.");
   }
 };
 
 export const generateFlashcardsFromContent = async (context) => {
-  if (!client) {
-    throw new Error("AI client is not initialized.");
+  if (!chatClient) {
+    // <-- Check for chatClient
+    throw new Error("AI chat client is not initialized.");
   }
 
   const messages = [
@@ -283,39 +337,41 @@ Do not include any text, markdown, or explanation outside of this single JSON ob
       content: `CONTEXT:
 ---
 ${context}
----`
-    }
+---`,
+    },
   ];
 
   try {
-    const result = await client.chat.completions.create({
+    // Use chatClient
+    const result = await chatClient.chat.completions.create({
       messages: messages,
       max_tokens: 2000,
       response_format: { type: "json_object" },
     });
-    
+
     const jsonString = result.choices[0].message.content;
     const parsed = JSON.parse(jsonString);
-    
+
     if (!parsed.flashcards || !Array.isArray(parsed.flashcards)) {
       throw new Error("AI returned invalid flashcard format.");
     }
-    
-    return parsed.flashcards; // Returns the array of { question, answer } objects
 
+    return parsed.flashcards;
   } catch (error) {
     console.error("Error generating flashcards:", error);
     throw new Error("Failed to get AI-generated flashcards.");
   }
 };
+
+// --- THIS IS THE FIXED EMBEDDING FUNCTION ---
 export const getEmbedding = async (text) => {
-  if (!client) {
-    throw new Error("AI client is not initialized.");
+  if (!embeddingClient) {
+    // <-- Check for embeddingClient
+    throw new Error("AI embedding client is not initialized.");
   }
   try {
-    const result = await client.embeddings.create({
-      // Use the new deployment name
-      deployment: embeddingDeployment, 
+    // Use embeddingClient. No 'deployment' param needed.
+    const result = await embeddingClient.embeddings.create({
       input: text,
     });
     return result.data[0].embedding; // Returns the vector array

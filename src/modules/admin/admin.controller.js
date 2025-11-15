@@ -1,7 +1,10 @@
 // src/modules/admin/admin.controller.js
 import * as AdminService from './admin.service.js';
-import * as pdfParse from 'pdf-parse';
-import * as mammoth from 'mammoth'
+import * as mammoth from 'mammoth';
+import { PDFExtract } from 'pdf.js-extract'; // Correct import
+import fs from 'fs/promises'; // For writing temp files
+import path from 'path';
+import os from 'os';
 
 // --- Subject Management ---
 export const createSubject = async (req, res) => {
@@ -109,39 +112,62 @@ export const deleteQuiz = async (req, res) => {
 };
 
 export const uploadBookContent = async (req, res) => {
+  const { topicId } = req.params;
+  const file = req.file;
+
+  if (!file) {
+    return res.status(400).json({ message: 'No file was uploaded.' });
+  }
+
+  let fullText;
+  let tempFilePath = ''; // To store the path for cleanup
+
   try {
-    const { topicId } = req.params;
-    const file = req.file;
-
-    if (!file) {
-      return res.status(400).json({ message: 'No file was uploaded.' });
-    }
-
-    let fileBuffer;
-    
     // --- NEW LOGIC TO PARSE DIFFERENT FILE TYPES ---
     if (file.mimetype === 'application/pdf') {
-      // --- THIS IS THE FIX ---
-      // Call the function on the '.default' property
-      const data = await pdfParse.default(file.buffer);
-      // --- END OF FIX ---
-      fileBuffer = Buffer.from(data.text, 'utf-8');
+      
+      // 1. Create a temporary file path
+      tempFilePath = path.join(os.tmpdir(), `upload_${Date.now()}.pdf`);
+      
+      // 2. Write the buffer to this temp file
+      await fs.writeFile(tempFilePath, file.buffer);
+      
+      // 3. Process the file using its path
+      const pdfExtract = new PDFExtract();
+      const data = await pdfExtract.extract(tempFilePath);
+      
+      // 4. Join the text content from all pages
+      fullText = data.pages
+        .map(page => 
+          page.content.map(item => item.str).join(' ')
+        )
+        .join('\n');
+
     } else if (file.mimetype === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document') {
-      // --- THIS IS THE FIX ---
-      // Call the function on the '.default' property
+      // This logic is correct and uses the .default wrapper
       const { value } = await mammoth.default.extractRawText({ buffer: file.buffer });
-      // --- END OF FIX ---
-      fileBuffer = Buffer.from(value, 'utf-8');
+      fullText = value;
     } else {
-      // It's a .txt file, just use the buffer
-      fileBuffer = file.buffer;
+      // .txt files
+      fullText = file.buffer.toString('utf-8');
     }
     // --- END OF NEW LOGIC ---
 
-    const count = await AdminService.processBookUpload(parseInt(topicId), fileBuffer);
+    // Pass the extracted string to the service (admin.service.js is already set up for this)
+    const count = await AdminService.processBookUpload(parseInt(topicId), fullText);
     res.status(201).json({ message: `Successfully added ${count} new content blocks.`, count });
+
   } catch (error) {
     console.error("Upload Error:", error); 
     res.status(500).json({ message: error.message });
+  } finally {
+    // 5. ALWAYS clean up the temp file
+    if (tempFilePath) {
+      try {
+        await fs.unlink(tempFilePath);
+      } catch (e) {
+        console.error(`Failed to delete temp file: ${tempFilePath}`, e);
+      }
+    }
   }
 };

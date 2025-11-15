@@ -13,7 +13,7 @@
   "license": "ISC",
   "description": "",
   "dependencies": {
-    "@prisma/client": "^6.9.0",
+    "@prisma/client": "^6.19.0",
     "axios": "^1.9.0",
     "axios-retry": "^4.5.0",
     "bcrypt": "^6.0.0",
@@ -24,13 +24,13 @@
     "mammoth": "^1.11.0",
     "multer": "^2.0.2",
     "openai": "^6.8.1",
-    "pdf-parse": "^2.4.5",
+    "pdf.js-extract": "^0.2.1",
     "pg": "^8.16.0",
     "pgvector": "^0.2.1",
     "rss-parser": "^3.13.0"
   },
   "devDependencies": {
     "nodemon": "^3.1.10",
-    "prisma": "^6.9.0"
+    "prisma": "^6.19.0"
   }
 }
