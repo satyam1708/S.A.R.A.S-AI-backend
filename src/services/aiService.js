@@ -380,3 +380,88 @@ export const getEmbedding = async (text) => {
     throw new Error("Failed to get AI embedding.");
   }
 };
+
+export const parseQuestionsFromText = async (rawText, examSource) => {
+  if (!chatClient) throw new Error("AI chat client is not initialized.");
+
+  const messages = [
+    {
+      role: "system",
+      content: `You are a data extraction expert for Indian competitive exams.
+Your task is to extract Multiple Choice Questions (MCQs) from the provided unstructured text.
+
+RULES:
+1. Identify the Question Text, 4 Options, and the Correct Answer.
+2. If the correct answer is explicitly marked in the text, use it.
+3. If NOT marked, YOU MUST SOLVE IT and provide the correct index (0-3) and a brief explanation.
+4. Assign a "difficulty" (EASY, MEDIUM, HARD) and a "subject" (e.g., History, Polity, Aptitude, English) to each question.
+5. Ignore header/footer text like "Page 1" or "Exam Code".
+
+OUTPUT FORMAT (Strict JSON):
+{
+  "questions": [
+    {
+      "questionText": "...",
+      "options": ["A", "B", "C", "D"],
+      "correctIndex": 0,
+      "explanation": "...",
+      "subject": "History",
+      "difficulty": "MEDIUM"
+    }
+  ]
+}`,
+    },
+    {
+      role: "user",
+      content: `Extract questions from this text for the exam '${examSource}':\n\n${rawText.substring(0, 15000)}` // Limit to prevent token overflow
+    },
+  ];
+
+  try {
+    const result = await chatClient.chat.completions.create({
+      messages: messages,
+      max_tokens: 4000,
+      response_format: { type: "json_object" },
+    });
+
+    const parsed = JSON.parse(result.choices[0].message.content);
+    return parsed.questions || [];
+  } catch (error) {
+    console.error("Error parsing questions:", error);
+    throw new Error("Failed to extract questions from file.");
+  }
+};
+
+export const generateCurrentAffairsQuestions = async (newsArticles, count = 5) => {
+  if (!chatClient) throw new Error("AI chat client is not initialized.");
+
+  const context = newsArticles.map(a => `- ${a.title}: ${a.description}`).join("\n");
+
+  const messages = [
+    {
+      role: "system",
+      content: `You are an examiner setting a "General Awareness" paper.
+Generate ${count} high-quality MCQs based *strictly* on the provided recent news summaries.
+Focus on: Appointments, Awards, Government Schemes, Sports, and Geopolitics.
+Format: JSON with questionText, options (4), correctIndex, explanation.`,
+    },
+    {
+      role: "user",
+      content: `Recent News:\n${context}`,
+    },
+  ];
+
+  try {
+    const result = await chatClient.chat.completions.create({
+      messages: messages,
+      max_tokens: 3000,
+      response_format: { type: "json_object" },
+    });
+
+    const parsed = JSON.parse(result.choices[0].message.content);
+    return parsed.questions || parsed.quiz || []; // Handle potential key variations
+  } catch (error) {
+    console.error("Error generating CA questions:", error);
+    return []; // Return empty on failure rather than crashing exam gen
+  }
+};
