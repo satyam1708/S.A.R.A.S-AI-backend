@@ -1,12 +1,8 @@
 // This is your Prisma schema file,
 // learn more about it in the docs: https://pris.ly/d/prisma-schema
 
-// Looking for ways to speed up your queries, or scale easily with your serverless or edge functions?
-// Try Prisma Accelerate: https://pris.ly/cli/accelerate-init
-
 generator client {
   provider = "prisma-client-js"
-  // output   = "../generated/prisma"
   previewFeatures = ["postgresqlExtensions"]
 }
 
@@ -16,23 +12,42 @@ datasource db {
   extensions = [vector]
 }
 
+// ===========================================
+// 1. USER & AUTHENTICATION
+// ===========================================
+
 model User {
-  id                Int                  @id @default(autoincrement())
+  id                Int      @id @default(autoincrement())
   name              String
-  email             String               @unique
+  email             String   @unique
   password          String
-  role              String               @default("USER")
+  role              String   @default("USER") // "USER", "ADMIN"
+
+  // --- User's Goal ---
+  // The user selects a target exam (e.g., SSC CGL). 
+  // This helps the UI filter content, but doesn't stop them from seeing other subjects.
+  selectedCourseId  Int?
+  selectedCourse    Course?  @relation(fields: [selectedCourseId], references: [id])
+
+  // --- Activity & Progress ---
   bookmarks         Bookmark[]
   chatSessions      ChatSession[]
   learningHistories LearningHistory[]
+  
+  // Practice History
   quizAttempts      UserQuizAttempt[]
-  flashcardStudies  UserFlashcardStudy[] // <-- 1. ADD RELATION TO USER
+  flashcardStudies  UserFlashcardStudy[]
+  
+  // Full Mock Exam History (For detailed analysis/graphs)
+  mockTestAttempts  MockTestAttempt[]
+
+  createdAt         DateTime @default(now())
 }
 
 model Bookmark {
   id          Int       @id @default(autoincrement())
   userId      Int
-  user        User      @relation(fields: [userId], references: [id])
+  user        User      @relation(fields: [userId], references: [id], onDelete: Cascade)
   title       String
   description String?
   url         String
@@ -42,56 +57,219 @@ model Bookmark {
   createdAt   DateTime  @default(now())
 }
 
-// Top-level categories, e.g., "Indian History", "Geography"
-model Subject {
-  id     Int     @id @default(autoincrement())
-  name   String  @unique
-  topics Topic[]
+// ===========================================
+// 2. COURSE, SYLLABUS & EXAM PATTERN
+// ===========================================
+
+// Represents a target exam (e.g., "SSC CGL Tier 1", "UPSC CSE")
+model Course {
+  id          Int             @id @default(autoincrement())
+  name        String          @unique
+  description String?
+  
+  // A course is made up of multiple subjects with specific rules
+  subjects    CourseSubject[] 
+  
+  // Full length mock tests designed specifically for this course
+  mockTests   MockTest[]
+  
+  // Users who are targeting this course
+  users       User[]
 }
 
-// Sub-categories, e.g., "Mughal Empire", "Rivers of India"
+// Global list of subjects (e.g., "History", "Reasoning", "English")
+// These exist independently of courses.
+model Subject {
+  id            Int             @id @default(autoincrement())
+  name          String          @unique
+  topics        Topic[]
+  
+  // This relation shows which courses this subject belongs to.
+  // If this is empty, the subject is "General" and belongs to no specific course.
+  courseConfigs CourseSubject[] 
+}
+
+// Junction Table: Defines Exam Rules for a Subject inside a Course
+// Example: In "SSC CGL", "Reasoning" has 25 Questions, 2.0 Marks, 0.5 Negative.
+model CourseSubject {
+  id            Int     @id @default(autoincrement())
+  courseId      Int
+  course        Course  @relation(fields: [courseId], references: [id], onDelete: Cascade)
+  
+  subjectId     Int
+  subject       Subject @relation(fields: [subjectId], references: [id], onDelete: Cascade)
+  
+  // --- Exam Pattern Rules ---
+  questionCount Int     // How many questions from this subject appear in the exam?
+  marksPerQ     Float   @default(1.0) // Marks awarded for a correct answer
+  negativeMarks Float   @default(0.0) // Marks deducted for a wrong answer
+  orderIndex    Int     @default(1)   // Order in the exam paper (e.g., 1=Reasoning, 2=GK)
+
+  @@unique([courseId, subjectId]) // Prevents adding the same subject twice to one course
+}
+
+// Detailed Topics (e.g., "Mughal Empire", "Blood Relations")
 model Topic {
   id           Int               @id @default(autoincrement())
   name         String
-  subject      Subject           @relation(fields: [subjectId], references: [id])
   subjectId    Int
+  subject      Subject           @relation(fields: [subjectId], references: [id], onDelete: Cascade)
+  
+  // AI Learning Content (Vector DB)
   content      ContentBlock[]
+  
+  // User Progress
   learnedBy    LearningHistory[]
+  
+  // Feature Relations
   chatSessions ChatSession[]
-  quizzes      Quiz[] // <-- Corrected: was 'quiz Quiz[]'
-  flashcards   Flashcard[] // <-- 2. ADD RELATION TO TOPIC
+  quizzes      Quiz[] 
+  flashcards   Flashcard[]
+  
+  // Questions specific to this topic (for generating mocks)
+  questions    QuestionBank[]
 }
 
-// The raw knowledge snippets for the AI to learn from
+// Knowledge base for RAG (Retrieval Augmented Generation)
 model ContentBlock {
-  id      Int    @id @default(autoincrement())
-  content String @db.Text
-  topic   Topic  @relation(fields: [topicId], references: [id])
-  topicId Int
-  // --- ADD THIS FIELD ---
-  // 1536 is the dimension for OpenAI's 'text-embedding-ada-002' model
-  vector  Unsupported("vector(1536)")?
+  id        Int    @id @default(autoincrement())
+  content   String @db.Text
+  topicId   Int
+  topic     Topic  @relation(fields: [topicId], references: [id], onDelete: Cascade)
+  
+  // Metadata for AI generation
+  source    String? // e.g. "Previous Year Paper 2022", "The Hindu Editorial"
+  
+  // Embedding vector for AI Search
+  vector    Unsupported("vector(1536)")?
 }
 
-// Tracks what a user has "learned" for revision
+// Tracks if a user has marked a topic as "Learned"
 model LearningHistory {
   id         Int     @id @default(autoincrement())
-  user       User    @relation(fields: [userId], references: [id])
+  user       User    @relation(fields: [userId], references: [id], onDelete: Cascade)
   userId     Int
-  topic      Topic   @relation(fields: [topicId], references: [id])
+  topic      Topic   @relation(fields: [topicId], references: [id], onDelete: Cascade)
   topicId    Int
-  hasLearned Boolean @default(true) // Added for clarity
+  hasLearned Boolean @default(true)
 
-  @@unique([userId, topicId]) // A user can only learn a topic once
+  @@unique([userId, topicId])
 }
 
-// --- Chat System ---
+// ===========================================
+// 3. CENTRAL QUESTION BANK & MOCK TESTS
+// ===========================================
+
+// A repository of all questions (PYQs, AI generated, etc.)
+model QuestionBank {
+  id             Int      @id @default(autoincrement())
+  topicId        Int
+  topic          Topic    @relation(fields: [topicId], references: [id], onDelete: Cascade)
+  
+  type           String   @default("MCQ") // MCQ, TRUE_FALSE
+  difficulty     String   @default("MEDIUM") // EASY, MEDIUM, HARD
+  
+  questionText   String   @db.Text
+  options        Json     // ["A", "B", "C", "D"]
+  correctIndex   Int      // 0-3
+  explanation    String?  @db.Text // Detailed solution for review
+  
+  // Tracks where this question has been used
+  usedInMocks    MockTestQuestion[]
+  mockAnswers    MockTestAnswer[]
+  
+  // For Analytics: We can add fields like "totalAttempts", "accuracyRate" later to see how hard a question is.
+  createdAt      DateTime @default(now())
+}
+
+// Represents a generated Full Exam (e.g., "SSC CGL - Mock Test 5")
+model MockTest {
+  id          Int      @id @default(autoincrement())
+  title       String   
+  courseId    Int
+  course      Course   @relation(fields: [courseId], references: [id], onDelete: Cascade)
+  
+  durationMin Int      @default(60) // e.g. 60 minutes
+  totalMarks  Int
+  isLive      Boolean  @default(false) // If true, available to users
+  
+  questions   MockTestQuestion[]
+  attempts    MockTestAttempt[]
+  
+  createdAt   DateTime @default(now())
+}
+
+// Connects a Question to a Mock Test with specific marks settings
+model MockTestQuestion {
+  id          Int          @id @default(autoincrement())
+  mockTestId  Int
+  mockTest    MockTest     @relation(fields: [mockTestId], references: [id], onDelete: Cascade)
+  
+  questionId  Int
+  question    QuestionBank @relation(fields: [questionId], references: [id], onDelete: Cascade)
+  
+  // Snapshot of marks (because marks might change per exam type)
+  marks       Float
+  negative    Float
+  
+  @@index([mockTestId])
+}
+
+// ===========================================
+// 4. ANALYTICS & RESULTS
+// ===========================================
+
+// Stores the summary of a User's attempt at a full Mock Test
+model MockTestAttempt {
+  id            Int      @id @default(autoincrement())
+  userId        Int
+  user          User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  mockTestId    Int
+  mockTest      MockTest @relation(fields: [mockTestId], references: [id], onDelete: Cascade)
+  
+  // High-level Stats for Graphs
+  score         Float
+  timeTaken     Int      // Total seconds used
+  correctCount  Int
+  wrongCount    Int
+  skippedCount  Int
+  
+  // Advanced AI Analysis (JSON)
+  // Example: { "weakTopics": ["Geometry", "Polity"], "accuracy": {"Reasoning": "90%", "English": "40%"} }
+  analysisJson  Json?    
+  
+  // AI-Generated textual feedback (e.g., "Focus more on Trigonometry formulas...")
+  aiFeedback    String?  @db.Text 
+  
+  submittedAt   DateTime @default(now())
+  
+  // Granular answers for deep diving
+  answers       MockTestAnswer[]
+}
+
+// Stores exactly what the user clicked for every single question
+model MockTestAnswer {
+  id             Int             @id @default(autoincrement())
+  attemptId      Int
+  attempt        MockTestAttempt @relation(fields: [attemptId], references: [id], onDelete: Cascade)
+  
+  questionId     Int
+  question       QuestionBank    @relation(fields: [questionId], references: [id], onDelete: Cascade)
+  
+  selectedOption Int?            // Null if skipped
+  isCorrect      Boolean
+  timeTaken      Int?            // Seconds spent on JUST this question (for "Time Management" graphs)
+}
+
+// ===========================================
+// 5. EXISTING FEATURES (Chat, News, Flashcards)
+// ===========================================
 
 model ChatSession {
   id       Int           @id @default(autoincrement())
-  user     User          @relation(fields: [userId], references: [id])
+  user     User          @relation(fields: [userId], references: [id], onDelete: Cascade)
   userId   Int
-  topic    Topic         @relation(fields: [topicId], references: [id])
+  topic    Topic         @relation(fields: [topicId], references: [id], onDelete: Cascade)
   topicId  Int
   messages ChatMessage[]
 
@@ -100,9 +278,9 @@ model ChatSession {
 
 model ChatMessage {
   id        Int         @id @default(autoincrement())
-  session   ChatSession @relation(fields: [sessionId], references: [id])
+  session   ChatSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
   sessionId Int
-  role      String // "user" or "assistant"
+  role      String 
   content   String      @db.Text
   createdAt DateTime    @default(now())
 }
@@ -112,14 +290,13 @@ model CachedBroadcast {
   category  String
   language  String
   script    String   @db.Text
-  articles  Json // Store the array of articles
+  articles  Json 
   updatedAt DateTime @updatedAt
 
-  @@unique([category, language]) // Only one cache entry per category/language combo
+  @@unique([category, language])
 }
 
-// --- Quiz System Models ---
-
+// Simple Topic Quiz (Different from Full Mock Test)
 model Quiz {
   id        Int               @id @default(autoincrement())
   topic     Topic             @relation(fields: [topicId], references: [id], onDelete: Cascade)
@@ -134,8 +311,8 @@ model Question {
   quiz               Quiz         @relation(fields: [quizId], references: [id], onDelete: Cascade)
   quizId             Int
   questionText       String
-  options            Json // Stores ["Option A", "Option B", "Option C", "Option D"]
-  correctAnswerIndex Int // Stores 0, 1, 2, or 3
+  options            Json 
+  correctAnswerIndex Int 
   answers            UserAnswer[]
 }
 
@@ -145,10 +322,10 @@ model UserQuizAttempt {
   userId      Int
   quiz        Quiz         @relation(fields: [quizId], references: [id], onDelete: Cascade)
   quizId      Int
-  score       Int // e.g., 8
-  total       Int // e.g., 10
+  score       Int 
+  total       Int 
   completedAt DateTime     @default(now())
-  answers     UserAnswer[] // The specific answers for this attempt
+  answers     UserAnswer[] 
 }
 
 model UserAnswer {
@@ -157,11 +334,9 @@ model UserAnswer {
   attemptId           Int
   question            Question        @relation(fields: [questionId], references: [id], onDelete: Cascade)
   questionId          Int
-  selectedAnswerIndex Int // The user's choice (0-3)
+  selectedAnswerIndex Int 
   isCorrect           Boolean
 }
-
-// --- 3. ADD NEW FLASHCARD MODELS ---
 
 model Flashcard {
   id          Int                  @id @default(autoincrement())
@@ -179,8 +354,7 @@ model UserFlashcardStudy {
   user         User      @relation(fields: [userId], references: [id], onDelete: Cascade)
   flashcardId  Int
   flashcard    Flashcard @relation(fields: [flashcardId], references: [id], onDelete: Cascade)
-  // 0=New, 1=Learning, 2=Relearning, 3=Known, 4=Mastered
-  strength     Int       @default(0)
+  strength     Int       @default(0) // 0-4 SRS Strength
   lastReviewed DateTime  @default(now())
   nextReviewAt DateTime  @default(now())
 
