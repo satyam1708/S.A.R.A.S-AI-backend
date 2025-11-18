@@ -157,13 +157,13 @@ export const getMockTestsForCourse = async (courseId) => {
 };
 
 export const submitMockAttempt = async (userId, mockTestId, answers) => {
-  // 1. Fetch correct answers & Question details (need Topics for analysis)
+  // 1. Fetch correct answers & Question details
   const mock = await prisma.mockTest.findUnique({
     where: { id: parseInt(mockTestId) },
     include: { 
       questions: { 
         include: { 
-          question: { include: { topic: true } } // Fetch Topic for analysis
+          question: { include: { topic: true } } 
         } 
       } 
     }
@@ -174,9 +174,10 @@ export const submitMockAttempt = async (userId, mockTestId, answers) => {
   let wrong = 0;
   let grandTotal = mock.totalMarks;
   
-  const weakTopicsSet = new Set(); // Track topics where user failed
+  const weakTopicsSet = new Set(); 
   const attemptData = [];
 
+  // 2. Grade the paper
   for (const ans of answers) { 
     const mockQ = mock.questions.find(mq => mq.questionId === ans.questionId);
     if (!mockQ) continue;
@@ -186,10 +187,9 @@ export const submitMockAttempt = async (userId, mockTestId, answers) => {
     if (isCorrect) {
       score += mockQ.marks;
       correct++;
-    } else if (ans.selectedIndex !== null) { 
+    } else if (ans.selectedIndex !== null && ans.selectedIndex !== undefined) { 
       score -= mockQ.negative;
       wrong++;
-      // Add to weak topics if wrong
       if (mockQ.question.topic) weakTopicsSet.add(mockQ.question.topic.name);
     }
 
@@ -203,11 +203,11 @@ export const submitMockAttempt = async (userId, mockTestId, answers) => {
   
   const timeTaken = answers.reduce((acc, curr) => acc + (curr.timeTaken || 0), 0);
 
-  // 2. Generate AI Analysis
+  // 3. Generate AI Analysis
   const weakTopicsList = Array.from(weakTopicsSet);
   const aiAnalysis = await aiService.generateExamAnalysis(score, grandTotal, weakTopicsList, timeTaken);
 
-  // 3. Save Attempt with Analysis
+  // 4. Save to DB
   return await prisma.mockTestAttempt.create({
     data: {
       userId: parseInt(userId),
@@ -217,8 +217,8 @@ export const submitMockAttempt = async (userId, mockTestId, answers) => {
       wrongCount: wrong,
       skippedCount: mock.questions.length - (correct + wrong),
       timeTaken,
-      analysisJson: aiAnalysis || {}, // Store the JSON object
-      aiFeedback: aiAnalysis?.summary || "Keep practicing!", // Store summary text
+      analysisJson: aiAnalysis || {}, 
+      aiFeedback: aiAnalysis?.summary || "Keep practicing!",
       answers: {
         create: attemptData
       }
