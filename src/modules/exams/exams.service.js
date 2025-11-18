@@ -157,20 +157,27 @@ export const getMockTestsForCourse = async (courseId) => {
 };
 
 export const submitMockAttempt = async (userId, mockTestId, answers) => {
-  // Calculate score
+  // 1. Fetch correct answers & Question details (need Topics for analysis)
+  const mock = await prisma.mockTest.findUnique({
+    where: { id: parseInt(mockTestId) },
+    include: { 
+      questions: { 
+        include: { 
+          question: { include: { topic: true } } // Fetch Topic for analysis
+        } 
+      } 
+    }
+  });
+
   let score = 0;
   let correct = 0;
   let wrong = 0;
+  let grandTotal = mock.totalMarks;
   
-  // 1. Fetch correct answers
-  const mock = await prisma.mockTest.findUnique({
-    where: { id: mockTestId },
-    include: { questions: { include: { question: true } } }
-  });
-
+  const weakTopicsSet = new Set(); // Track topics where user failed
   const attemptData = [];
 
-  for (const ans of answers) { // { questionId: 1, selectedIndex: 2, timeTaken: 40 }
+  for (const ans of answers) { 
     const mockQ = mock.questions.find(mq => mq.questionId === ans.questionId);
     if (!mockQ) continue;
 
@@ -179,9 +186,11 @@ export const submitMockAttempt = async (userId, mockTestId, answers) => {
     if (isCorrect) {
       score += mockQ.marks;
       correct++;
-    } else if (ans.selectedIndex !== null) { // Attempted but wrong
+    } else if (ans.selectedIndex !== null) { 
       score -= mockQ.negative;
       wrong++;
+      // Add to weak topics if wrong
+      if (mockQ.question.topic) weakTopicsSet.add(mockQ.question.topic.name);
     }
 
     attemptData.push({
@@ -191,21 +200,30 @@ export const submitMockAttempt = async (userId, mockTestId, answers) => {
       timeTaken: ans.timeTaken
     });
   }
+  
+  const timeTaken = answers.reduce((acc, curr) => acc + (curr.timeTaken || 0), 0);
 
-  // 2. Save Attempt
+  // 2. Generate AI Analysis
+  const weakTopicsList = Array.from(weakTopicsSet);
+  const aiAnalysis = await aiService.generateExamAnalysis(score, grandTotal, weakTopicsList, timeTaken);
+
+  // 3. Save Attempt with Analysis
   return await prisma.mockTestAttempt.create({
     data: {
-      userId,
-      mockTestId,
+      userId: parseInt(userId),
+      mockTestId: parseInt(mockTestId),
       score,
       correctCount: correct,
       wrongCount: wrong,
       skippedCount: mock.questions.length - (correct + wrong),
-      timeTaken: answers.reduce((acc, curr) => acc + (curr.timeTaken || 0), 0),
+      timeTaken,
+      analysisJson: aiAnalysis || {}, // Store the JSON object
+      aiFeedback: aiAnalysis?.summary || "Keep practicing!", // Store summary text
       answers: {
         create: attemptData
       }
-      // aiFeedback: ... call AI here later to analyze performance
     }
   });
 };
+
+

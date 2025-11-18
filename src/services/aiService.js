@@ -465,3 +465,40 @@ Format: JSON with questionText, options (4), correctIndex, explanation.`,
     return []; // Return empty on failure rather than crashing exam gen
   }
 };
+
+export const generateExamAnalysis = async (score, totalMarks, weakTopics, timeSpent) => {
+  if (!chatClient) return null;
+
+  const messages = [
+    {
+      role: "system",
+      content: `You are a senior exam mentor for SSC/UPSC aspirants. 
+      Analyze the student's mock test performance.
+      
+      Inputs:
+      - Score: ${score} / ${totalMarks}
+      - Weak Topics: ${weakTopics.join(", ")}
+      - Time Management: ${timeSpent} seconds total.
+      
+      Output JSON format:
+      {
+        "summary": "Brief 2-line summary of performance.",
+        "strengths": ["List of inferred strengths"],
+        "weaknesses": ["List of weak areas"],
+        "actionPlan": "3 bullet points on what to study next."
+      }`
+    }
+  ];
+
+  try {
+    const result = await chatClient.chat.completions.create({
+      messages: messages,
+      max_tokens: 1000,
+      response_format: { type: "json_object" }
+    });
+    return JSON.parse(result.choices[0].message.content);
+  } catch (error) {
+    console.error("AI Analysis Error:", error);
+    return null;
+  }
+};
