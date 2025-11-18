@@ -7,6 +7,7 @@ import bookmarkRoutes from './modules/bookmarks/bookmarks.routes.js';
 import newsRoutes from './modules/news/news.routes.js';
 import gsRoutes from './modules/gs/gs.routes.js';
 import adminRoutes from './modules/admin/admin.routes.js';
+import courseRoutes from './modules/courses/courses.routes.js';
 // We will import gsRoutes here later
 
 dotenv.config();
@@ -41,6 +42,7 @@ app.use('/api/bookmarks', bookmarkRoutes);
 app.use('/api/news', newsRoutes);
 app.use('/api/gs', gsRoutes);
 app.use('/api/admin', adminRoutes);
+app.use('/api/courses', courseRoutes);
 // app.use('/api/gs', gsRoutes); // We will add this in Phase 2
 
 // --- Start Server ---

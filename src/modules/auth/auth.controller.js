@@ -38,3 +38,26 @@ export const getProfile = async (req, res) => {
     res.status(error.statusCode || 500).json({ message: error.message || 'Server error' });
   }
 };
+
+export const selectCourse = async (req, res) => {
+  try {
+    const userId = req.user.id; // Coming from auth middleware
+    const { courseId } = req.body;
+
+    if (!courseId) return res.status(400).json({ error: "Course ID is required" });
+
+    const updatedUser = await authService.updateUserCourse(userId, courseId);
+    
+    res.json({
+      message: "Course goal updated successfully",
+      user: {
+        id: updatedUser.id,
+        name: updatedUser.name,
+        selectedCourse: updatedUser.selectedCourse
+      }
+    });
+  } catch (error) {
+    console.error("Select Course Error:", error);
+    res.status(500).json({ error: "Failed to update course selection" });
+  }
+};
