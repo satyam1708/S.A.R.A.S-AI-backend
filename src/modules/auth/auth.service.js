@@ -77,3 +77,11 @@ export const getProfileById = async (userId) => {
   }
   return user;
 };
+
+export const updateUserCourse = async (userId, courseId) => {
+  return await prisma.user.update({
+    where: { id: userId },
+    data: { selectedCourseId: parseInt(courseId) },
+    include: { selectedCourse: true } // Return the course details confirmation
+  });
+};
