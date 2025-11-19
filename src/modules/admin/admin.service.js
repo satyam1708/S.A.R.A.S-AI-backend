@@ -21,11 +21,28 @@ export const deleteSubject = (id) => prisma.subject.delete({ where: { id } });
 
 
 // --- Topic Management ---
-export const createTopic = (name, subjectId) => prisma.topic.create({ data: { name, subjectId } });
-export const getTopics = (subjectId) => prisma.topic.findMany({
+export const createTopic = (name, subjectId, chapterId = null) => {
+  return prisma.topic.create({
+    data: {
+      name,
+      subjectId,
+      chapterId // Pass the new optional field
+    }
+  });
+};
+export const getTopics = (subjectId) => {
+  return prisma.topic.findMany({
     where: { subjectId },
-    include: { _count: { select: { content: true } } },
-});
+    include: { 
+      _count: { select: { content: true } },
+      chapter: true // Include chapter info in response
+    },
+    orderBy: [
+      { chapter: { name: 'asc' } }, // Sort by Chapter name first
+      { name: 'asc' }               // Then by Topic name
+    ]
+  });
+};
 
 // --- NEW TOPIC METHODS ---
 export const updateTopic = (id, name) => prisma.topic.update({ where: { id }, data: { name } });
@@ -136,4 +153,29 @@ export const processBookUpload = async (topicId, fullText) => {
     }
   }
   return createdCount;
+};
+
+export const createChapter = (name, subjectId) => {
+  return prisma.chapter.create({
+    data: { name, subjectId }
+  });
+};
+
+export const getChapters = (subjectId) => {
+  return prisma.chapter.findMany({
+    where: { subjectId },
+    include: { _count: { select: { topics: true } } },
+    orderBy: { name: 'asc' }
+  });
+};
+
+export const updateChapter = (id, name) => {
+  return prisma.chapter.update({
+    where: { id },
+    data: { name }
+  });
+};
+
+export const deleteChapter = (id) => {
+  return prisma.chapter.delete({ where: { id } });
 };

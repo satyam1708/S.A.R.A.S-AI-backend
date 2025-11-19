@@ -15,6 +15,11 @@ router.get("/subjects", AdminController.getSubjects);
 router.put("/subjects/:id", AdminController.updateSubject); // <-- NEW
 router.delete("/subjects/:id", AdminController.deleteSubject); // <-- NEW
 
+router.post("/chapters", AdminController.createChapter);
+router.get("/chapters/:subjectId", AdminController.getChaptersBySubject);
+router.put("/chapters/:id", AdminController.updateChapter);
+router.delete("/chapters/:id", AdminController.deleteChapter);
+
 // Topic routes
 router.post("/topics", AdminController.createTopic);
 router.get("/topics/:subjectId", AdminController.getTopicsBySubject);

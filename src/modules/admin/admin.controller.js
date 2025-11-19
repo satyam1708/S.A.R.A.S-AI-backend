@@ -46,8 +46,9 @@ export const deleteSubject = async (req, res) => {
 // ... (Existing Create/Get Topic) ...
 export const createTopic = async (req, res) => {
   try {
-    const { name, subjectId } = req.body;
-    const topic = await AdminService.createTopic(name, subjectId);
+    // Now accepts chapterId (optional)
+    const { name, subjectId, chapterId } = req.body; 
+    const topic = await AdminService.createTopic(name, parseInt(subjectId), chapterId ? parseInt(chapterId) : null);
     res.status(201).json(topic);
   } catch (error) {
     res.status(500).json({ message: error.message });
@@ -185,5 +186,42 @@ export const uploadBookContent = async (req, res) => {
     if (tempFilePath) {
       try { await fs.unlink(tempFilePath); } catch (e) { console.error(e); }
     }
+  }
+};
+
+export const createChapter = async (req, res) => {
+  try {
+    const { name, subjectId } = req.body;
+    const chapter = await AdminService.createChapter(name, parseInt(subjectId));
+    res.status(201).json(chapter);
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+};
+
+export const getChaptersBySubject = async (req, res) => {
+  try {
+    const chapters = await AdminService.getChapters(parseInt(req.params.subjectId));
+    res.json(chapters);
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+};
+
+export const updateChapter = async (req, res) => {
+  try {
+    const chapter = await AdminService.updateChapter(parseInt(req.params.id), req.body.name);
+    res.json(chapter);
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+};
+
+export const deleteChapter = async (req, res) => {
+  try {
+    await AdminService.deleteChapter(parseInt(req.params.id));
+    res.json({ message: 'Chapter deleted' });
+  } catch (error) {
+    res.status(500).json({ message: error.message });
   }
 };

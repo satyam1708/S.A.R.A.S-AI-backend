@@ -82,11 +82,23 @@ model Course {
 model Subject {
   id            Int             @id @default(autoincrement())
   name          String          @unique
+  chapters      Chapter[]
   topics        Topic[]
   
   // This relation shows which courses this subject belongs to.
   // If this is empty, the subject is "General" and belongs to no specific course.
   courseConfigs CourseSubject[] 
+}
+model Chapter {
+  id        Int      @id @default(autoincrement())
+  name      String
+  
+  subjectId Int
+  subject   Subject  @relation(fields: [subjectId], references: [id], onDelete: Cascade)
+  
+  topics    Topic[]
+
+  @@unique([subjectId, name]) // Prevent duplicate chapter names within the same subject
 }
 
 // Junction Table: Defines Exam Rules for a Subject inside a Course
@@ -112,21 +124,20 @@ model CourseSubject {
 model Topic {
   id           Int               @id @default(autoincrement())
   name         String
+  
   subjectId    Int
   subject      Subject           @relation(fields: [subjectId], references: [id], onDelete: Cascade)
   
-  // AI Learning Content (Vector DB)
+  // --- NEW: Optional link to a Chapter ---
+  chapterId    Int?
+  chapter      Chapter?          @relation(fields: [chapterId], references: [id], onDelete: Cascade)
+  
+  // ... (Keep content, learnedBy, etc. as is)
   content      ContentBlock[]
-  
-  // User Progress
   learnedBy    LearningHistory[]
-  
-  // Feature Relations
   chatSessions ChatSession[]
   quizzes      Quiz[] 
   flashcards   Flashcard[]
-  
-  // Questions specific to this topic (for generating mocks)
   questions    QuestionBank[]
 }
 
