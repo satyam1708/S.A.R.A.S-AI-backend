@@ -23,14 +23,19 @@ export const register = async (name, email, password) => {
   
   const newUser = await prisma.user.create({
     data: { name, email, password: hashedPassword },
-    select: { id: true, name: true, email: true, role: true }, // <-- ADDED role
+    select: { id: true, name: true, email: true, role: true }, 
   });
   
   return newUser;
 };
 
 export const login = async (email, password) => {
-  const user = await prisma.user.findUnique({ where: { email } });
+  // UPDATED: Include selectedCourse in the query
+  const user = await prisma.user.findUnique({ 
+    where: { email },
+    include: { selectedCourse: true } 
+  });
+
   if (!user) {
     throw new AppError('Invalid email or password', 400);
   }
@@ -45,10 +50,10 @@ export const login = async (email, password) => {
       id: user.id, 
       name: user.name, 
       email: user.email, 
-      role: user.role // <-- FIX 1: Add role to the JWT token
+      role: user.role 
     },
     JWT_SECRET,
-    { expiresIn: '1h' }
+    { expiresIn: '7d' } // Increased to 7 days for better UX
   );
 
   return { 
@@ -57,7 +62,9 @@ export const login = async (email, password) => {
       id: user.id, 
       name: user.name, 
       email: user.email, 
-      role: user.role // <-- FIX 2: Add role to the returned user object
+      role: user.role,
+      // UPDATED: Pass the course data back to the frontend
+      selectedCourse: user.selectedCourse
     } 
   };
 };
@@ -69,7 +76,9 @@ export const getProfileById = async (userId) => {
       id: true, 
       name: true, 
       email: true, 
-      role: true // <-- FIX 3: Select the role from the database
+      role: true,
+      // UPDATED: Select the course details so the frontend knows a choice was made
+      selectedCourse: true 
     },
   });
   if (!user) {
