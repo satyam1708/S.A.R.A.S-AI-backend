@@ -10,16 +10,19 @@ import {
 export const getSubjectsAndTopics = async () => {
   return prisma.subject.findMany({
     include: {
-      // 1. Fetch Chapters and their topics
+      // 1. Fetch Chapters and their nested topics
       chapters: {
         include: {
-          topics: { select: { id: true, name: true } }
+          topics: {
+            select: { id: true, name: true },
+            orderBy: { name: 'asc' }
+          }
         },
         orderBy: { name: 'asc' }
       },
-      // 2. Fetch "Direct" Topics (those not in any chapter)
+      // 2. Fetch "Direct" Topics (those NOT in any chapter)
       topics: {
-        where: { chapterId: null },
+        where: { chapterId: null }, // Only get topics that don't belong to a chapter
         select: { id: true, name: true },
         orderBy: { name: 'asc' }
       },
