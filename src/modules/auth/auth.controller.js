@@ -1,4 +1,4 @@
-// Handles (req, res) logic
+// src/modules/auth/auth.controller.js
 import * as AuthService from './auth.service.js';
 
 export const registerUser = async (req, res) => {
@@ -46,7 +46,8 @@ export const selectCourse = async (req, res) => {
 
     if (!courseId) return res.status(400).json({ error: "Course ID is required" });
 
-    const updatedUser = await authService.updateUserCourse(userId, courseId);
+    // FIX: Use AuthService (capital A), not authService
+    const updatedUser = await AuthService.updateUserCourse(userId, courseId);
     
     res.json({
       message: "Course goal updated successfully",

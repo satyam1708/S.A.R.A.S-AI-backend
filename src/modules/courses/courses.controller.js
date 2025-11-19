@@ -31,7 +31,9 @@ export const createNewCourse = async (req, res) => {
 
 export const linkSubject = async (req, res) => {
   try {
-    const { courseId } = req.params;
+    // FIX: Destructure 'id' (from route /:id/subjects) and rename it to courseId
+    const { id: courseId } = req.params; 
+    
     const { subjectId, questionCount, marksPerQ, negativeMarks, orderIndex } = req.body;
     
     const link = await courseService.addSubjectToCourse(courseId, subjectId, {
@@ -42,6 +44,7 @@ export const linkSubject = async (req, res) => {
     });
     res.status(201).json(link);
   } catch (error) {
+    console.error("Link Subject Error:", error); // Added logging for debugging
     res.status(500).json({ error: error.message });
   }
 };
