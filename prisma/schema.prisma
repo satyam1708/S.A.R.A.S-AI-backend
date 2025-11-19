@@ -371,3 +371,14 @@ model UserFlashcardStudy {
 
   @@unique([userId, flashcardId])
 }
+
+model EnglishDose {
+  id        Int      @id @default(autoincrement())
+  date      DateTime @unique @db.Date // Stores just the date (YYYY-MM-DD)
+  
+  // We store structured data as JSON for flexibility
+  // Structure: { vocabulary: [], idiom: {}, grammar: {}, root: {}, quiz: {} }
+  content   Json     
+  
+  createdAt DateTime @default(now())
+}

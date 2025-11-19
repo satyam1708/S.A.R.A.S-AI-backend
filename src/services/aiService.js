@@ -503,3 +503,58 @@ export const generateExamAnalysis = async (score, totalMarks, weakTopics, timeSp
   }
 };
 
+export const generateEnglishDose = async () => {
+  if (!chatClient) throw new Error("AI chat client is not initialized.");
+
+  const prompt = `
+    You are an expert English tutor for Indian competitive exams (SSC CGL, UPSC, Bank PO).
+    Generate a "Daily English Dose".
+    
+    Output MUST be a valid, minified JSON object with this EXACT structure:
+    {
+      "vocabulary": [
+        { "word": "Word", "meaning": "Definition", "synonyms": ["A", "B"], "antonyms": ["X", "Y"], "sentence": "Example sentence." },
+        // ... exactly 5 words
+      ],
+      "idiom": {
+        "phrase": "Idiom phrase",
+        "meaning": "Meaning",
+        "sentence": "Example usage."
+      },
+      "grammar": {
+        "title": "Subject-Verb Agreement Rule #X",
+        "rule": "Explanation of the rule.",
+        "example": "Correct vs Incorrect example."
+      },
+      "root": {
+        "word": "Bene",
+        "meaning": "Good",
+        "examples": ["Benefit", "Benevolent", "Benefactor"]
+      },
+      "quiz": {
+        "question": "Spot the error in: 'One of the boys are missing.'",
+        "options": ["One of", "the boys", "are missing", "No error"],
+        "correctIndex": 2,
+        "explanation": "'One of' is followed by plural noun but singular verb. Should be 'is missing'."
+      }
+    }
+  `;
+
+  const messages = [
+    { role: "system", content: "You are a JSON generator. Output ONLY JSON." },
+    { role: "user", content: prompt }
+  ];
+
+  try {
+    const result = await chatClient.chat.completions.create({
+      messages,
+      max_tokens: 2000,
+      response_format: { type: "json_object" },
+    });
+
+    return JSON.parse(result.choices[0].message.content);
+  } catch (error) {
+    console.error("AI English Gen Error:", error);
+    throw new Error("Failed to generate English dose.");
+  }
+};

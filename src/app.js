@@ -9,6 +9,7 @@ import gsRoutes from './modules/gs/gs.routes.js';
 import adminRoutes from './modules/admin/admin.routes.js';
 import courseRoutes from './modules/courses/courses.routes.js';
 import examRoutes from './modules/exams/exams.routes.js';
+import englishRoutes from './modules/english/english.routes.js';
 // We will import gsRoutes here later
 
 dotenv.config();
@@ -45,6 +46,7 @@ app.use('/api/gs', gsRoutes);
 app.use('/api/admin', adminRoutes);
 app.use('/api/courses', courseRoutes);
 app.use('/api/exams', examRoutes);
+app.use('/api/english', englishRoutes);
 // app.use('/api/gs', gsRoutes); // We will add this in Phase 2
 
 // --- Start Server ---
