@@ -1,6 +1,7 @@
 // src/modules/courses/courses.controller.js
 import * as courseService from './courses.service.js';
 
+// ... (Keep existing listCourses, getCourseDetails, createNewCourse) ...
 export const listCourses = async (req, res) => {
   try {
     const courses = await courseService.getAllCourses();
@@ -29,13 +30,43 @@ export const createNewCourse = async (req, res) => {
   }
 };
 
+// --- NEW FUNCTIONS ---
+
+export const updateCourse = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const updated = await courseService.updateCourse(id, req.body);
+    res.json(updated);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+};
+
+export const deleteCourse = async (req, res) => {
+  try {
+    const { id } = req.params;
+    await courseService.deleteCourse(id);
+    res.json({ message: 'Course deleted successfully' });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+};
+
+export const unlinkSubject = async (req, res) => {
+  try {
+    const { id: courseId, subjectId } = req.params;
+    await courseService.removeSubjectFromCourse(courseId, subjectId);
+    res.json({ message: 'Subject unlinked successfully' });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+};
+
+// ... (Keep existing linkSubject, createSubject, listSubjects) ...
 export const linkSubject = async (req, res) => {
   try {
-    // FIX: Destructure 'id' (from route /:id/subjects) and rename it to courseId
     const { id: courseId } = req.params; 
-    
     const { subjectId, questionCount, marksPerQ, negativeMarks, orderIndex } = req.body;
-    
     const link = await courseService.addSubjectToCourse(courseId, subjectId, {
       questionCount,
       marksPerQ,
@@ -44,7 +75,7 @@ export const linkSubject = async (req, res) => {
     });
     res.status(201).json(link);
   } catch (error) {
-    console.error("Link Subject Error:", error); // Added logging for debugging
+    console.error("Link Subject Error:", error);
     res.status(500).json({ error: error.message });
   }
 };

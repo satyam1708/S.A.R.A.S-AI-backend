@@ -1,12 +1,13 @@
 // src/modules/admin/admin.controller.js
 import * as AdminService from './admin.service.js';
-import * as mammoth from 'mammoth';
-import { PDFExtract } from 'pdf.js-extract'; // Correct import
-import fs from 'fs/promises'; // For writing temp files
+// ... (imports remain same) ...
+import { PDFExtract } from 'pdf.js-extract'; 
+import * as mammoth from 'mammoth'; // Ensure this is imported correctly based on your setup
+import fs from 'fs/promises'; 
 import path from 'path';
 import os from 'os';
 
-// --- Subject Management ---
+// ... (Existing Create/Get Subject) ...
 export const createSubject = async (req, res) => {
   try {
     const subject = await AdminService.createSubject(req.body.name);
@@ -15,7 +16,6 @@ export const createSubject = async (req, res) => {
     res.status(500).json({ message: error.message });
   }
 };
-
 export const getSubjects = async (req, res) => {
   try {
     const subjects = await AdminService.getAllSubjects();
@@ -25,7 +25,25 @@ export const getSubjects = async (req, res) => {
   }
 };
 
-// --- Topic Management ---
+// --- NEW SUBJECT METHODS ---
+export const updateSubject = async (req, res) => {
+  try {
+    const subject = await AdminService.updateSubject(parseInt(req.params.id), req.body.name);
+    res.json(subject);
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+};
+export const deleteSubject = async (req, res) => {
+  try {
+    await AdminService.deleteSubject(parseInt(req.params.id));
+    res.json({ message: 'Subject deleted' });
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+};
+
+// ... (Existing Create/Get Topic) ...
 export const createTopic = async (req, res) => {
   try {
     const { name, subjectId } = req.body;
@@ -35,7 +53,6 @@ export const createTopic = async (req, res) => {
     res.status(500).json({ message: error.message });
   }
 };
-
 export const getTopicsBySubject = async (req, res) => {
   try {
     const topics = await AdminService.getTopics(parseInt(req.params.subjectId));
@@ -45,7 +62,25 @@ export const getTopicsBySubject = async (req, res) => {
   }
 };
 
-// --- Content Management ---
+// --- NEW TOPIC METHODS ---
+export const updateTopic = async (req, res) => {
+  try {
+    const topic = await AdminService.updateTopic(parseInt(req.params.id), req.body.name);
+    res.json(topic);
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+};
+export const deleteTopic = async (req, res) => {
+  try {
+    await AdminService.deleteTopic(parseInt(req.params.id));
+    res.json({ message: 'Topic deleted' });
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+};
+
+// ... (Existing Content methods) ...
 export const addContentBlock = async (req, res) => {
   try {
     const { topicId, content } = req.body;
@@ -55,7 +90,6 @@ export const addContentBlock = async (req, res) => {
     res.status(500).json({ message: error.message });
   }
 };
-
 export const getContentForTopic = async (req, res) => {
   try {
     const blocks = await AdminService.getContent(parseInt(req.params.topicId));
@@ -64,7 +98,6 @@ export const getContentForTopic = async (req, res) => {
     res.status(500).json({ message: error.message });
   }
 };
-
 export const deleteContentBlock = async (req, res) => {
   try {
     await AdminService.deleteContent(parseInt(req.params.blockId));
@@ -74,8 +107,19 @@ export const deleteContentBlock = async (req, res) => {
   }
 };
 
-// --- [NEW] Quiz Management ---
+// --- NEW CONTENT UPDATE ---
+export const updateContentBlock = async (req, res) => {
+  try {
+    const { content } = req.body;
+    const block = await AdminService.updateContent(parseInt(req.params.blockId), content);
+    res.json(block);
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+};
 
+// ... (Keep generateQuizForTopic, getQuizzesForTopic, deleteQuiz, uploadBookContent) ...
+// [Rest of file matches your uploaded version]
 export const generateQuizForTopic = async (req, res) => {
   try {
     const { topicId } = req.params;
@@ -86,14 +130,9 @@ export const generateQuizForTopic = async (req, res) => {
   }
 };
 
-/**
- * --- UPDATED ---
- * Renamed function to reflect it gets *all* quizzes.
- */
 export const getQuizzesForTopic = async (req, res) => {
   try {
     const { topicId } = req.params;
-    // --- UPDATED ---
     const quizzes = await AdminService.getQuizzesForTopic(parseInt(topicId));
     res.json(quizzes);
   } catch (error) {
@@ -120,40 +159,22 @@ export const uploadBookContent = async (req, res) => {
   }
 
   let fullText;
-  let tempFilePath = ''; // To store the path for cleanup
+  let tempFilePath = ''; 
 
   try {
-    // --- NEW LOGIC TO PARSE DIFFERENT FILE TYPES ---
     if (file.mimetype === 'application/pdf') {
-      
-      // 1. Create a temporary file path
       tempFilePath = path.join(os.tmpdir(), `upload_${Date.now()}.pdf`);
-      
-      // 2. Write the buffer to this temp file
       await fs.writeFile(tempFilePath, file.buffer);
-      
-      // 3. Process the file using its path
       const pdfExtract = new PDFExtract();
       const data = await pdfExtract.extract(tempFilePath);
-      
-      // 4. Join the text content from all pages
-      fullText = data.pages
-        .map(page => 
-          page.content.map(item => item.str).join(' ')
-        )
-        .join('\n');
-
+      fullText = data.pages.map(page => page.content.map(item => item.str).join(' ')).join('\n');
     } else if (file.mimetype === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document') {
-      // This logic is correct and uses the .default wrapper
       const { value } = await mammoth.default.extractRawText({ buffer: file.buffer });
       fullText = value;
     } else {
-      // .txt files
       fullText = file.buffer.toString('utf-8');
     }
-    // --- END OF NEW LOGIC ---
-
-    // Pass the extracted string to the service (admin.service.js is already set up for this)
+    
     const count = await AdminService.processBookUpload(parseInt(topicId), fullText);
     res.status(201).json({ message: `Successfully added ${count} new content blocks.`, count });
 
@@ -161,13 +182,8 @@ export const uploadBookContent = async (req, res) => {
     console.error("Upload Error:", error); 
     res.status(500).json({ message: error.message });
   } finally {
-    // 5. ALWAYS clean up the temp file
     if (tempFilePath) {
-      try {
-        await fs.unlink(tempFilePath);
-      } catch (e) {
-        console.error(`Failed to delete temp file: ${tempFilePath}`, e);
-      }
+      try { await fs.unlink(tempFilePath); } catch (e) { console.error(e); }
     }
   }
 };

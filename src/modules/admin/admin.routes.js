@@ -7,31 +7,30 @@ import { upload } from "../../middleware/upload.middleware.js";
 
 const router = Router();
 
-// All admin routes are protected by auth and admin role
 router.use(authMiddleware, adminMiddleware);
 
 // Subject routes
 router.post("/subjects", AdminController.createSubject);
 router.get("/subjects", AdminController.getSubjects);
+router.put("/subjects/:id", AdminController.updateSubject); // <-- NEW
+router.delete("/subjects/:id", AdminController.deleteSubject); // <-- NEW
 
 // Topic routes
-router.post("/topics", AdminController.createTopic); // expects { name, subjectId }
+router.post("/topics", AdminController.createTopic);
 router.get("/topics/:subjectId", AdminController.getTopicsBySubject);
+router.put("/topics/:id", AdminController.updateTopic); // <-- NEW
+router.delete("/topics/:id", AdminController.deleteTopic); // <-- NEW
 
 // Content routes
-router.post("/content", AdminController.addContentBlock); // expects { topicId, content }
+router.post("/content", AdminController.addContentBlock); 
 router.get("/content/:topicId", AdminController.getContentForTopic);
+router.put("/content/:blockId", AdminController.updateContentBlock); // <-- NEW
 router.delete("/content/:blockId", AdminController.deleteContentBlock);
-router.post(
-  "/content/upload-book/:topicId",
-  upload.single("book"),
-  AdminController.uploadBookContent
-);
+router.post("/content/upload-book/:topicId", upload.single("book"), AdminController.uploadBookContent);
 
-// --- [NEW] Quiz Routes ---
+// Quiz Routes
 router.post("/quiz/generate/:topicId", AdminController.generateQuizForTopic);
-// --- UPDATED ---
-router.get("/quizzes/:topicId", AdminController.getQuizzesForTopic); // Was /quiz/:topicId
+router.get("/quizzes/:topicId", AdminController.getQuizzesForTopic);
 router.delete("/quiz/:quizId", AdminController.deleteQuiz);
 
 export default router;
