@@ -8,13 +8,23 @@ import {
 
 // Get all subjects and their nested topics for the UI
 export const getSubjectsAndTopics = async () => {
-  // This function is correct.
   return prisma.subject.findMany({
     include: {
+      // 1. Fetch Chapters and their topics
+      chapters: {
+        include: {
+          topics: { select: { id: true, name: true } }
+        },
+        orderBy: { name: 'asc' }
+      },
+      // 2. Fetch "Direct" Topics (those not in any chapter)
       topics: {
+        where: { chapterId: null },
         select: { id: true, name: true },
+        orderBy: { name: 'asc' }
       },
     },
+    orderBy: { name: 'asc' }
   });
 };
 
