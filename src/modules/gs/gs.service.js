@@ -1,3 +1,4 @@
+// src/modules/gs/gs.service.js
 import prisma from "../../lib/prisma.js";
 import { toSql } from 'pgvector/pg';
 import {
@@ -32,9 +33,7 @@ export const getSubjectsAndTopics = async () => {
 };
 
 /**
- * --- CORRECTED ---
  * Gets the chat history for a specific user and topic.
- * This now correctly uses the ChatSession model.
  */
 export const getChatHistory = async (userId, topicId) => {
   // 1. Find the chat session linking the user and topic
@@ -66,31 +65,43 @@ export const getChatHistory = async (userId, topicId) => {
   });
 };
 
-// --- This is the new, shared logic for RAG retrieval ---
+/**
+ * --- OPTIMIZED RAG LOGIC ---
+ * Retrives context based on vector similarity.
+ * Filters out irrelevant blocks to prevent AI hallucinations.
+ */
 const getRagContext = async (topicId, userMessage) => {
   // 1. Get embedding for the user's question
   const embedding = await getEmbedding(userMessage);
 
-  // 2. Find the 5 most relevant content blocks for this topic
+  // 2. Find the 5 most relevant content blocks using Cosine Similarity
+  // We select the 'distance' to filter out weak matches.
+  // <=> operator returns cosine distance (0 is identical, 2 is opposite)
   const relevantBlocks = await prisma.$queryRaw`
-    SELECT "content"
+    SELECT "content", ("vector" <=> ${toSql(embedding)}::vector) as distance
     FROM "ContentBlock"
     WHERE "topicId" = ${topicId}
-    ORDER BY "vector" <=> ${toSql(embedding)}::vector
+    ORDER BY distance ASC
     LIMIT 5
   `;
 
-  // 3. Build the context string
-  if (!relevantBlocks || relevantBlocks.length === 0) {
-    return "No specific context provided for this topic. Answer based on general knowledge.";
+  // 3. Filter out garbage/irrelevant blocks
+  // A threshold of 0.5 is generally good for OpenAi embeddings. 
+  // If distance > 0.5, the content is likely not very relevant to the query.
+  const goodBlocks = relevantBlocks.filter(b => b.distance < 0.5);
+
+  // 4. Build the context string
+  if (goodBlocks.length === 0) {
+    // Don't send generic "No context" text that might confuse the AI.
+    // Returning empty string allows AI to rely on its internal knowledge + chat history.
+    return ""; 
   }
   
-  return relevantBlocks.map((c) => c.content).join("\n---\n");
+  return goodBlocks.map((c) => c.content).join("\n---\n");
 };
+
 /**
- * --- CORRECTED ---
  * Posts a new message and gets an AI response.
- * This now correctly saves messages to a ChatSession.
  */
 export const postNewMessage = async (userId, topicId, userMessage) => {
   // 1. Get the topic (to check if it exists)
@@ -106,8 +117,7 @@ export const postNewMessage = async (userId, topicId, userMessage) => {
     update: {},
   });
 
-  // 3. --- NEW RAG LOGIC ---
-  // Get ONLY the relevant context, not all of it
+  // 3. Get ONLY relevant context
   const context = await getRagContext(topicId, userMessage);
   
   // 4. Get chat history
@@ -117,10 +127,13 @@ export const postNewMessage = async (userId, topicId, userMessage) => {
     take: 10,
   });
 
-  // 5. Create the AI prompt (same as before)
-  const systemMessage = `You are SarvaGyaan...
-CONTEXT:
-${context}`;
+  // 5. Create the AI prompt
+  // We only add the Context section if valid context exists
+  let systemMessage = `You are SarvaGyaan, an expert tutor for Indian competitive exams (UPSC, SSC). Answer the user's question clearly and concisely.`;
+  
+  if (context) {
+    systemMessage += `\n\nUse the following CONTEXT to answer the question. If the answer is not in the context, use your general knowledge but prioritize the context.\n\nCONTEXT:\n${context}`;
+  }
 
   const messages = [
     { role: "system", content: systemMessage },
@@ -128,10 +141,10 @@ ${context}`;
     { role: "user", content: userMessage },
   ];
 
-  // 6. Get AI response (same as before)
+  // 6. Get AI response
   const aiResponse = await getChatCompletion(messages);
 
-  // 7. Save messages to DB (same as before)
+  // 7. Save messages to DB
   await prisma.$transaction([
     prisma.chatMessage.create({
       data: { role: "user", content: userMessage, sessionId: session.id },
@@ -144,8 +157,11 @@ ${context}`;
   return aiResponse;
 };
 
+/**
+ * Streams a new message response.
+ */
 export const streamNewMessage = async (userId, topicId, userMessage) => {
-  // 1. Get the topic (to check if it exists)
+  // 1. Get the topic
   const topic = await prisma.topic.findFirst({
     where: { id: topicId }
   });
@@ -158,7 +174,7 @@ export const streamNewMessage = async (userId, topicId, userMessage) => {
     update: {},
   });
 
-  // 3. --- NEW RAG LOGIC ---
+  // 3. Get relevant context (Optimized)
   const context = await getRagContext(topicId, userMessage);
 
   // 4. Get chat history
@@ -168,10 +184,11 @@ export const streamNewMessage = async (userId, topicId, userMessage) => {
     take: 10,
   });
 
-  // 5. Create the AI prompt (same as before)
-  const systemMessage = `You are SarvaGyaan...
-CONTEXT:
-${context}`;
+  // 5. Create the AI prompt
+  let systemMessage = `You are SarvaGyaan, an expert tutor for Indian competitive exams. Answer clearly.`;
+  if (context) {
+    systemMessage += `\n\nCONTEXT:\n${context}`;
+  }
 
   const messages = [
     { role: "system", content: systemMessage },
@@ -191,7 +208,7 @@ ${context}`;
   return { stream, sessionId: session.id };
 };
 
-// +++ 4. ADD THIS NEW FUNCTION to save the AI response after streaming +++
+// Save the AI response after streaming
 export const saveAiResponse = async (sessionId, aiMessage) => {
   return prisma.chatMessage.create({
     data: {
@@ -204,7 +221,6 @@ export const saveAiResponse = async (sessionId, aiMessage) => {
 
 // Mark a topic as learned
 export const markTopicAsLearned = async (userId, topicId) => {
-  // This function was correct as it uses LearningHistory
   const topic = await prisma.topic.findFirst({
     where: { id: topicId },
   });
@@ -224,16 +240,14 @@ export const getRevisionForUser = async (userId) => {
   const learnedTopics = await prisma.topic.findMany({
     where: {
       learnedBy: {
-        // This references the relation on the Topic model
         some: {
-          userId: userId, // Find topics where at least one LearningHistory record...
-        }, // ...matches this userId
+          userId: userId,
+        }, 
       },
     },
     include: {
       content: {
-        // Include the content blocks for those topics
-        take: 5, // Limit to 5 content blocks per topic to keep it manageable
+        take: 5, 
       },
     },
   });
@@ -255,7 +269,6 @@ export const getRevisionForUser = async (userId) => {
   }
 
   // 3. Create the AI prompt
-  // --- NEW EXAM-FOCUSED PERSONA ---
   const messages = [
     {
       role: "system",
@@ -271,15 +284,10 @@ ${context}`,
 };
 
 /**
- * --- CORRECTED ---
- * This function now creates a new topic under a default "General" subject.
- *
- * !! IMPORTANT !!: You must manually create a Subject in your database
- * with the name "General" for this code to work.
+ * Creates a new topic from context (e.g. News Article)
  */
 export const createTopicFromContext = async (userId, context) => {
   // 1. Get the "General" Subject.
-  //    You MUST create this subject in your database first!
   const generalSubject = await prisma.subject.findUnique({
     where: { name: "General" },
   });
@@ -292,7 +300,6 @@ export const createTopicFromContext = async (userId, context) => {
   }
 
   // 2. Create AI prompt
-  // --- NEW EXAM-FOCUSED PERSONA ---
   const initialPrompt = `
     A student wants to learn about a topic from a news article titled: "${context}"
     This is for UPSC/SSC exam preparation.
@@ -324,12 +331,11 @@ export const createTopicFromContext = async (userId, context) => {
   const newTopic = await prisma.topic.create({
     data: {
       name: topicName,
-      subjectId: generalSubject.id, // <-- FIX: Provide the required subjectId
-      // userId: userId, // <-- FIX: REMOVED. This field does not exist on Topic.
+      subjectId: generalSubject.id, 
     },
   });
 
-  // 6. Create the ChatSession to link the User, new Topic, and first message
+  // 6. Create the ChatSession
   const newSession = await prisma.chatSession.create({
     data: {
       userId: userId,
@@ -337,26 +343,20 @@ export const createTopicFromContext = async (userId, context) => {
     },
   });
 
-  // 7. Save the AI's first message to the new chat session
+  // 7. Save the AI's first message
   await prisma.chatMessage.create({
     data: {
       role: "assistant",
       content: initialMessage,
-      sessionId: newSession.id, // <-- FIX: Use the new sessionId
+      sessionId: newSession.id, 
     },
   });
 
-  // 8. Return the new topic object
   return newTopic;
 };
 
-// --- [NEW] STUDENT QUIZ FUNCTIONS ---
+// --- STUDENT QUIZ FUNCTIONS ---
 
-/**
- * --- NEW & UPDATED ---
- * Gets ALL quizzes for a topic, but formatted for a student.
- * (i.e., correct answers are REMOVED to prevent cheating)
- */
 export const getQuizzesForTopic = async (topicId) => {
   const quizzes = await prisma.quiz.findMany({
     where: { topicId: topicId },
@@ -378,10 +378,9 @@ export const getQuizzesForTopic = async (topicId) => {
   });
 
   if (!quizzes || quizzes.length === 0) {
-    return []; // Return empty array instead of error
+    return []; 
   }
 
-  // Map the quizzes to add the 'total' count to the main object
   return quizzes.map((quiz) => {
     const { _count, ...rest } = quiz;
     return {
@@ -391,11 +390,6 @@ export const getQuizzesForTopic = async (topicId) => {
   });
 };
 
-/**
- * --- NEW ---
- * Checks a single answer for a user and returns instant feedback.
- * This is how you show the answer immediately.
- */
 export const checkAnswer = async (questionId, selectedAnswerIndex) => {
   const question = await prisma.question.findUnique({
     where: { id: questionId },
@@ -411,16 +405,11 @@ export const checkAnswer = async (questionId, selectedAnswerIndex) => {
   return {
     questionId: question.id,
     isCorrect: isCorrect,
-    correctAnswerIndex: question.correctAnswerIndex, // Return the correct answer
+    correctAnswerIndex: question.correctAnswerIndex, 
   };
 };
 
-/**
- * --- NEW ---
- * Submits a user's full quiz attempt and saves the score.
- */
 export const submitQuiz = async (userId, quizId, answers) => {
-  // 1. Get the quiz and its questions (this time, with correct answers)
   const quiz = await prisma.quiz.findUnique({
     where: { id: quizId },
     include: {
@@ -434,7 +423,6 @@ export const submitQuiz = async (userId, quizId, answers) => {
     throw new Error("Quiz not found.");
   }
 
-  // 2. Create a map of correct answers for easy lookup
   const correctAnswersMap = new Map();
   quiz.questions.forEach((q) => {
     correctAnswersMap.set(q.id, q.correctAnswerIndex);
@@ -444,7 +432,6 @@ export const submitQuiz = async (userId, quizId, answers) => {
   const total = quiz.questions.length;
   const userAnswersData = [];
 
-  // 3. Grade the answers
   for (const answer of answers) {
     const correctAnswerIndex = correctAnswersMap.get(answer.questionId);
     const isCorrect = answer.selectedAnswerIndex === correctAnswerIndex;
@@ -460,7 +447,6 @@ export const submitQuiz = async (userId, quizId, answers) => {
     });
   }
 
-  // 4. Save the full attempt in the database
   const attempt = await prisma.userQuizAttempt.create({
     data: {
       userId: userId,
@@ -468,11 +454,11 @@ export const submitQuiz = async (userId, quizId, answers) => {
       score: score,
       total: total,
       answers: {
-        create: userAnswersData, // Create all UserAnswer records
+        create: userAnswersData, 
       },
     },
     include: {
-      answers: true, // Return the attempt with the answers
+      answers: true, 
     },
   });
 
@@ -482,25 +468,21 @@ export const submitQuiz = async (userId, quizId, answers) => {
 const calculateNextReview = (strength) => {
   const now = new Date();
   const intervals = [
-    10 * 60 * 1000, // 10 minutes (strength 0 -> 1)
-    24 * 60 * 60 * 1000, // 1 day (strength 1 -> 2)
-    3 * 24 * 60 * 60 * 1000, // 3 days (strength 2 -> 3)
-    7 * 24 * 60 * 60 * 1000, // 7 days (strength 3 -> 4)
-    14 * 24 * 60 * 60 * 1000, // 14 days (strength 4 -> 5)
+    10 * 60 * 1000, // 10 min
+    24 * 60 * 60 * 1000, // 1 day
+    3 * 24 * 60 * 60 * 1000, // 3 days
+    7 * 24 * 60 * 60 * 1000, // 7 days
+    14 * 24 * 60 * 60 * 1000, // 14 days
     30 * 24 * 60 * 60 * 1000, // 30 days
     90 * 24 * 60 * 60 * 1000, // 90 days
   ];
 
-  // Cap strength at the max interval length
   const intervalIndex = Math.min(strength, intervals.length - 1);
   const millisecondsToAdd = intervals[intervalIndex];
 
   return new Date(now.getTime() + millisecondsToAdd);
 };
 
-/**
- * Gets all flashcards due for review for a user.
- */
 export const getDueFlashcards = async (userId) => {
   const now = new Date();
 
@@ -509,14 +491,14 @@ export const getDueFlashcards = async (userId) => {
     where: {
       userId: userId,
       nextReviewAt: {
-        lte: now, // Less than or equal to now
+        lte: now, 
       },
     },
     include: {
-      flashcard: true, // Include the Q&A text
+      flashcard: true, 
     },
     orderBy: {
-      nextReviewAt: "asc", // Show most overdue first
+      nextReviewAt: "asc", 
     },
   });
 
@@ -528,7 +510,6 @@ export const getDueFlashcards = async (userId) => {
   const learnedTopicIds = learnedTopics.map((t) => t.topicId);
 
   if (learnedTopicIds.length === 0) {
-    // No learned topics, just return the cards they are already studying
     return dueCards.map((study) => study.flashcard);
   }
 
@@ -547,7 +528,6 @@ export const getDueFlashcards = async (userId) => {
   });
 
   // 3. Combine and return
-  // We return the full flashcard object. The frontend will map this.
   const allDueFlashcards = [
     ...dueCards.map((study) => study.flashcard),
     ...newFlashcards,
@@ -557,10 +537,6 @@ export const getDueFlashcards = async (userId) => {
   return allDueFlashcards.sort(() => Math.random() - 0.5);
 };
 
-/**
- * Reviews a single flashcard and updates its next review date.
- * Rating: 0 = 'Again', 1 = 'Good', 2 = 'Easy'
- */
 export const reviewFlashcard = async (userId, flashcardId, rating) => {
   const study = await prisma.userFlashcardStudy.upsert({
     where: {
@@ -569,15 +545,13 @@ export const reviewFlashcard = async (userId, flashcardId, rating) => {
         flashcardId: flashcardId,
       },
     },
-    // Create a new study record if this is the first time seeing this card
     create: {
       userId: userId,
       flashcardId: flashcardId,
       strength: 0,
       lastReviewed: new Date(),
-      nextReviewAt: new Date(), // Will be updated below
+      nextReviewAt: new Date(), 
     },
-    // Or update the existing one
     update: {},
   });
 
@@ -585,13 +559,13 @@ export const reviewFlashcard = async (userId, flashcardId, rating) => {
 
   switch (rating) {
     case 0: // 'Again'
-      newStrength = 0; // Reset strength
+      newStrength = 0;
       break;
     case 1: // 'Good'
-      newStrength += 1; // Increment strength
+      newStrength += 1; 
       break;
     case 2: // 'Easy'
-      newStrength += 2; // Increment strength by 2
+      newStrength += 2; 
       break;
     default:
       throw new Error("Invalid rating. Must be 0, 1, or 2.");
@@ -599,7 +573,6 @@ export const reviewFlashcard = async (userId, flashcardId, rating) => {
 
   const nextReviewAt = calculateNextReview(newStrength);
 
-  // Update the study record with new strength and next review date
   return prisma.userFlashcardStudy.update({
     where: {
       id: study.id,
