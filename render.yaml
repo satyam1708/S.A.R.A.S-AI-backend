@@ -3,8 +3,8 @@ services:
     name: thesarvanews-backend
     env: node
     plan: free
-    buildCommand: npm install && npx prisma generate # Added prisma generate
-    startCommand: node src/app.js # <-- THIS IS THE FIX
+    buildCommand: npm install && npx prisma generate
+    startCommand: node src/app.js
     envVars:
       - key: NODE_VERSION
         value: 18 
@@ -14,10 +14,15 @@ services:
         sync: false
       - key: DATABASE_URL
         sync: false
-      # You will need to add your Azure keys here for deployment
+      # Chat Model Keys
       - key: AZURE_OPENAI_ENDPOINT
         sync: false
       - key: AZURE_OPENAI_KEY
         sync: false
       - key: AZURE_OPENAI_CHAT_DEPLOYMENT
+        sync: false
+      # Embedding Model Keys (Added)
+      - key: AZURE_OPENAI_EMBEDDING_ENDPOINT
+        sync: false
+      - key: AZURE_OPENAI_EMBEDDING_DEPLOYMENT
         sync: false
