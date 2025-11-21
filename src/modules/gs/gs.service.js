@@ -104,35 +104,35 @@ const getRagContext = async (topicId, userMessage) => {
  * Posts a new message and gets an AI response.
  */
 export const postNewMessage = async (userId, topicId, userMessage) => {
-  // 1. Get the topic (to check if it exists)
-  const topic = await prisma.topic.findFirst({
-    where: { id: topicId }
-  });
+  const topic = await prisma.topic.findFirst({ where: { id: topicId } });
   if (!topic) throw new Error("Topic not found");
 
-  // 2. Find or create the ChatSession
   const session = await prisma.chatSession.upsert({
     where: { userId_topicId: { userId: userId, topicId: topicId } },
     create: { userId: userId, topicId: topicId },
     update: {},
   });
 
-  // 3. Get ONLY relevant context
   const context = await getRagContext(topicId, userMessage);
   
-  // 4. Get chat history
   const history = await prisma.chatMessage.findMany({
     where: { sessionId: session.id },
     orderBy: { createdAt: "asc" },
     take: 10,
   });
 
-  // 5. Create the AI prompt
-  // We only add the Context section if valid context exists
-  let systemMessage = `You are SarvaGyaan, an expert tutor for Indian competitive exams (UPSC, SSC). Answer the user's question clearly and concisely.`;
+  // --- VAPI-LIKE PROMPT OPTIMIZATION ---
+  let systemMessage = `You are SarvaGyaan, an expert voice tutor for Indian competitive exams (UPSC, SSC).
+  
+  VOICE RULES:
+  1. You are speaking, not writing. Do NOT use Markdown (no **bold**, no # headers, no - lists).
+  2. Keep your response conversational and concise.
+  3. Start with a short, direct sentence to ensure audio starts playing immediately.
+  4. Avoid long monologues. Ask a follow-up question if appropriate.
+  `;
   
   if (context) {
-    systemMessage += `\n\nUse the following CONTEXT to answer the question. If the answer is not in the context, use your general knowledge but prioritize the context.\n\nCONTEXT:\n${context}`;
+    systemMessage += `\n\nCONTEXT:\n${context}\n\nUse this context to answer. If the answer is missing, use general knowledge.`;
   }
 
   const messages = [
@@ -141,10 +141,8 @@ export const postNewMessage = async (userId, topicId, userMessage) => {
     { role: "user", content: userMessage },
   ];
 
-  // 6. Get AI response
   const aiResponse = await getChatCompletion(messages);
 
-  // 7. Save messages to DB
   await prisma.$transaction([
     prisma.chatMessage.create({
       data: { role: "user", content: userMessage, sessionId: session.id },
@@ -161,33 +159,31 @@ export const postNewMessage = async (userId, topicId, userMessage) => {
  * Streams a new message response.
  */
 export const streamNewMessage = async (userId, topicId, userMessage) => {
-  // 1. Get the topic
-  const topic = await prisma.topic.findFirst({
-    where: { id: topicId }
-  });
+  const topic = await prisma.topic.findFirst({ where: { id: topicId } });
   if (!topic) throw new Error("Topic not found");
 
-  // 2. Find or create the ChatSession
   const session = await prisma.chatSession.upsert({
     where: { userId_topicId: { userId: userId, topicId: topicId } },
     create: { userId: userId, topicId: topicId },
     update: {},
   });
 
-  // 3. Get relevant context (Optimized)
   const context = await getRagContext(topicId, userMessage);
 
-  // 4. Get chat history
   const history = await prisma.chatMessage.findMany({
     where: { sessionId: session.id },
     orderBy: { createdAt: "asc" },
     take: 10,
   });
 
-  // 5. Create the AI prompt
-  let systemMessage = `You are SarvaGyaan, an expert tutor for Indian competitive exams. Answer clearly.`;
+  // --- VAPI-LIKE PROMPT OPTIMIZATION ---
+  let systemMessage = `You are SarvaGyaan, a voice tutor.
+  CRITICAL: Do NOT use Markdown. No bold text, no headers, no bullet points.
+  Speak naturally. Keep your first sentence short.
+  Explain the concept simply as if talking to a student.`;
+  
   if (context) {
-    systemMessage += `\n\nCONTEXT:\n${context}`;
+    systemMessage += `\n\nInfo:\n${context}`;
   }
 
   const messages = [
@@ -196,15 +192,13 @@ export const streamNewMessage = async (userId, topicId, userMessage) => {
     { role: "user", content: userMessage },
   ];
 
-  // 6. Save the USER'S message to the DB first
+  // Save User Message first
   await prisma.chatMessage.create({
     data: { role: "user", content: userMessage, sessionId: session.id },
   });
 
-  // 7. Get the AI response STREAM
   const stream = await getChatCompletionStream(messages);
 
-  // 8. Return both the stream and the session ID
   return { stream, sessionId: session.id };
 };
 

@@ -134,16 +134,13 @@ export const summarizeArticle = async (articleContent) => {
 };
 
 export const getChatCompletion = async (messages) => {
-  if (!chatClient) {
-    // <-- Check for chatClient
-    throw new Error("AI chat client is not initialized.");
-  }
+  if (!chatClient) throw new Error("AI chat client is not initialized.");
 
   try {
-    // Use chatClient
     const result = await chatClient.chat.completions.create({
       messages: messages,
-      max_tokens: 1000,
+      max_tokens: 500, // Lower token count = faster completion
+      temperature: 0.3, // More deterministic = faster first token
     });
     return result.choices[0].message.content;
   } catch (error) {
@@ -153,16 +150,13 @@ export const getChatCompletion = async (messages) => {
 };
 
 export const getChatCompletionStream = async (messages) => {
-  if (!chatClient) {
-    // <-- Check for chatClient
-    throw new Error("AI chat client is not initialized.");
-  }
+  if (!chatClient) throw new Error("AI chat client is not initialized.");
 
   try {
-    // Use chatClient
     const result = await chatClient.chat.completions.create({
       messages: messages,
-      max_tokens: 1000,
+      max_tokens: 800,
+      temperature: 0.3, // Lower temperature for voice consistency and speed
       stream: true,
     });
     return result;
