@@ -1,6 +1,7 @@
 import axios from 'axios';
 import axiosRetry from 'axios-retry';
 import * as NewsService from './news.service.js';
+import { getChatCompletionStream } from '../../services/aiService.js'; // <--- IMPORT THIS
 
 const API_KEY = process.env.GNEWS_API_KEY;
 
@@ -16,7 +17,6 @@ axiosRetry(axios, {
   retryCondition: (err) =>
     axiosRetry.isNetworkOrIdempotentRequestError(err) || err.code === 'ETIMEDOUT',
 });
-
 
 export const pingGNews = async (req, res) => {
   try {
@@ -83,8 +83,8 @@ export const summarize = async (req, res) => {
 
 export const getRadioBroadcast = async (req, res) => {
   try {
-    const { category = 'general', language = 'en-US' } = req.body; // <-- GET LANGUAGE
-    const { script, articles } = await NewsService.getRadioBroadcast(category, language); // <-- PASS IT
+    const { category = 'general', language = 'en-US' } = req.body;
+    const { script, articles } = await NewsService.getRadioBroadcast(category, language);
     res.json({ script, articles });
   } catch (error) {
     console.error('Radio broadcast error:', error);
@@ -92,15 +92,15 @@ export const getRadioBroadcast = async (req, res) => {
   }
 };
 
-// --- UPDATE THIS CONTROLLER ---
+// Standard Chat (Legacy/Fallback)
 export const postRadioChat = async (req, res) => {
   try {
-    const { userMessage, broadcastScript, chatHistory, language = 'en-US' } = req.body; // <-- GET LANGUAGE
+    const { userMessage, broadcastScript, chatHistory, language = 'en-US' } = req.body;
     if (!userMessage || !broadcastScript || !chatHistory) {
       return res.status(400).json({ message: 'Missing message, script, or history' });
     }
 
-    const response = await NewsService.getRadioChatResponse(userMessage, broadcastScript, chatHistory, language); // <-- PASS IT
+    const response = await NewsService.getRadioBroadcastResponse(userMessage, broadcastScript, chatHistory, language);
     res.json({ role: 'assistant', content: response });
   } catch (error) {
     console.error('Radio chat error:', error);
@@ -108,22 +108,82 @@ export const postRadioChat = async (req, res) => {
   }
 };
 
+/**
+ * --- NEW STREAMING CONTROLLER FOR VAPI-LIKE LATENCY ---
+ * This establishes a Server-Sent Events (SSE) connection to stream
+ * the AI response token-by-token to the frontend.
+ */
+export const postRadioChatStream = async (req, res) => {
+  try {
+    const { userMessage, broadcastScript, chatHistory, language = 'en-US' } = req.body;
+
+    if (!userMessage) {
+      return res.status(400).json({ message: 'Message required' });
+    }
+
+    // 1. Set headers for Server-Sent Events (SSE)
+    // These headers keep the connection open and tell the browser it's a stream
+    res.setHeader('Content-Type', 'text/event-stream');
+    res.setHeader('Cache-Control', 'no-cache');
+    res.setHeader('Connection', 'keep-alive');
+
+    // 2. Prepare Context for the AI
+    // We inject the broadcast script so the AI knows what "context" it is discussing
+    const context = `Here is the full broadcast script I am reading from:\n${broadcastScript}\n\nAnswer the user's question briefly and conversationally based on this.`;
+    
+    // 3. Prepare Messages Array
+    const messages = [
+      { 
+        role: "system", 
+        content: `You are a professional news anchor. ${language === 'hi-IN' ? 'Speak in Hinglish.' : 'Speak in English.'} Keep answers short (1-2 sentences) for a voice conversation. Context:\n${context}` 
+      },
+      ...(chatHistory || []),
+      { role: "user", content: userMessage }
+    ];
+
+    // 4. Get Stream from AI Service
+    const stream = await getChatCompletionStream(messages);
+
+    // 5. Pipe Stream to Client
+    for await (const chunk of stream) {
+      const content = chunk.choices[0]?.delta?.content || '';
+      if (content) {
+        // Send data in SSE format: "data: {JSON}\n\n"
+        res.write(`data: ${JSON.stringify({ content })}\n\n`);
+      }
+    }
+
+    // 6. End Stream
+    res.write('data: [DONE]\n\n');
+    res.end();
+
+  } catch (error) {
+    console.error('Radio Stream Error:', error);
+    // If headers aren't sent yet, send JSON error. 
+    // If headers ARE sent, we must end the stream to stop the client from waiting.
+    if (!res.headersSent) {
+      res.status(500).json({ message: error.message });
+    } else {
+      res.end();
+    }
+  }
+};
+
 export const getHeadlines = async (req, res) => {
   try {
     const { category = 'general', language = 'en' } = req.query;
     const articles = await NewsService.getHeadlines(category, language);
-    // We mimic the GNews structure so the frontend doesn't break
     res.json({ articles, totalArticles: articles.length });
   } catch (error) {
     console.error('Error in /headlines:', error.message || error);
     res.status(error.statusCode || 500).json({ error: error.message || 'Failed to fetch headlines.' });
   }
 };
+
 export const searchNews = async (req, res) => {
   try {
-    // req.query will contain { keyword, date, country, etc. }
     const result = await NewsService.searchNews(req.query);
-    res.json(result); // Sends back { articles, totalArticles }
+    res.json(result);
   } catch (error) {
     console.error('Error in /search:', error.message || error);
     res.status(error.statusCode || 500).json({ error: error.message || 'Failed to fetch search results.' });

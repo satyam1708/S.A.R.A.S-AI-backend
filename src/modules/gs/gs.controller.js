@@ -1,4 +1,5 @@
-import * as GsService from './gs.service.js';
+// src/modules/gs/gs.controller.js
+import * as GsService from "./gs.service.js";
 
 export const getSubjects = async (req, res, next) => {
   try {
@@ -9,31 +10,38 @@ export const getSubjects = async (req, res, next) => {
   }
 };
 
-// RENAMED from getChat to getChatHistory
 export const getChatHistory = async (req, res, next) => {
   try {
     const { topicId } = req.params;
-    // UPDATED to call the new service function
-    const messages = await GsService.getChatHistory(req.user.id, parseInt(topicId));
+    const messages = await GsService.getChatHistory(
+      req.user.id,
+      parseInt(topicId)
+    );
     res.json(messages);
   } catch (error) {
     next(error);
   }
 };
 
-// RENAMED from postChat to postMessage
+// Non-streaming fallback
 export const postMessage = async (req, res, next) => {
   try {
     const { topicId } = req.params;
     const { message } = req.body;
-    // UPDATED to call the new service function
-    const aiResponse = await GsService.postNewMessage(req.user.id, parseInt(topicId), message);
-    res.json({ role: 'assistant', content: aiResponse });
+    const aiResponse = await GsService.postNewMessage(
+      req.user.id,
+      parseInt(topicId),
+      message
+    );
+    res.json({ role: "assistant", content: aiResponse });
   } catch (error) {
     next(error);
   }
 };
 
+/**
+ * High-Performance Streaming Endpoint
+ */
 export const streamMessage = async (req, res, next) => {
   try {
     const { topicId } = req.params;
@@ -41,41 +49,49 @@ export const streamMessage = async (req, res, next) => {
     const { id: userId } = req.user;
 
     if (!message) {
-      return res.status(400).json({ message: 'Message is required' });
+      return res.status(400).json({ message: "Message is required" });
     }
 
-    // 1. Get the stream and session ID from the service
+    // 1. Initialize Stream
     const { stream, sessionId } = await GsService.streamNewMessage(
       userId,
       parseInt(topicId),
       message
     );
 
-    // 2. Set headers for Server-Sent Events (SSE)
-    res.setHeader('Content-Type', 'text/event-stream');
-    res.setHeader('Cache-Control', 'no-cache');
-    res.setHeader('Connection', 'keep-alive');
+    // 2. Headers for SSE
+    res.setHeader("Content-Type", "text/event-stream");
+    res.setHeader("Cache-Control", "no-cache");
+    res.setHeader("Connection", "keep-alive");
 
-    let fullResponse = '';
+    let fullResponse = "";
 
-    // 3. Iterate over the stream
+    // 3. Pipe Stream to Response
     for await (const chunk of stream) {
-      const content = chunk.choices[0]?.delta?.content || '';
+      const content = chunk.choices[0]?.delta?.content || "";
       if (content) {
         fullResponse += content;
-        // 4. Write data in SSE format
+        // Send strictly formatted JSON string to avoid parser errors on frontend
+        // Example: data: "Hello"
         res.write(`data: ${JSON.stringify(content)}\n\n`);
       }
     }
 
-    // 5. After the stream ends, save the full response
-    await GsService.saveAiResponse(sessionId, fullResponse);
-
-    // 6. Send a final "end" event
-    res.write('event: end\ndata: {}\n\n');
+    // 4. End of Stream
+    res.write("data: [DONE]\n\n");
     res.end();
+
+    // 5. Async DB Save (Don't block the response)
+    // We save the full text after the connection closes
+    await GsService.saveAiResponse(sessionId, fullResponse);
   } catch (error) {
-    next(error); // Pass errors to your middleware
+    console.error("Stream Error:", error);
+    // If headers not sent, send JSON error
+    if (!res.headersSent) {
+      res.status(500).json({ message: error.message });
+    } else {
+      res.end();
+    }
   }
 };
 
@@ -83,54 +99,41 @@ export const markTopicAsLearned = async (req, res, next) => {
   try {
     const { topicId } = req.params;
     await GsService.markTopicAsLearned(req.user.id, parseInt(topicId));
-    res.status(200).json({ message: 'Topic marked as learned.' });
-  } catch (error)
- {
+    res.status(200).json({ message: "Topic marked as learned." });
+  } catch (error) {
     next(error);
   }
 };
 
 export const getRevision = async (req, res, next) => {
   try {
-    // RENAMED service function for clarity
     const revision = await GsService.getRevisionForUser(req.user.id);
-    res.json({ role: 'assistant', content: revision });
+    res.json({ role: "assistant", content: revision });
   } catch (error) {
     next(error);
   }
 };
 
-// This is your new function, it's correct.
 export const createChatFromContext = async (req, res, next) => {
   try {
-    const { id: userId } = req.user; // From authMiddleware
-    const { context } = req.body; // e.g., "Article title about Quantum Computing"
+    const { id: userId } = req.user;
+    const { context } = req.body;
 
-    if (!context) {
-      return res.status(400).json({ message: 'Context is required' });
-    }
+    if (!context)
+      return res.status(400).json({ message: "Context is required" });
 
-    // Call the service to do the heavy lifting
     const newTopic = await GsService.createTopicFromContext(userId, context);
-
-    // Return the newly created topic. The frontend will use its ID.
     res.status(201).json(newTopic);
   } catch (error) {
     next(error);
   }
 };
 
+// --- Student Quiz & Flashcard Controllers ---
 
-// --- [NEW] Quiz Functions for Students ---
-
-/**
- * --- UPDATED ---
- * Renamed to get *quizzes* (plural) for a topic.
- */
 export const getQuizzesForTopic = async (req, res, next) => {
   try {
     const { topicId } = req.params;
-    // --- UPDATED ---
     const quizzes = await GsService.getQuizzesForTopic(parseInt(topicId));
     res.json(quizzes);
   } catch (error) {
@@ -138,39 +141,30 @@ export const getQuizzesForTopic = async (req, res, next) => {
   }
 };
 
-/**
- * --- NEW ---
- * Checks a single answer and returns immediate feedback.
- */
 export const checkAnswer = async (req, res, next) => {
   try {
     const { questionId, selectedAnswerIndex } = req.body;
     if (questionId == null || selectedAnswerIndex == null) {
-      return res.status(400).json({ message: 'questionId and selectedAnswerIndex are required.' });
+      return res.status(400).json({ message: "Missing data." });
     }
-
     const result = await GsService.checkAnswer(
       parseInt(questionId),
       parseInt(selectedAnswerIndex)
     );
-    res.json(result); // Returns { isCorrect, correctAnswerIndex }
+    res.json(result);
   } catch (error) {
     next(error);
   }
 };
 
-/**
- * --- NEW ---
- * Submits the final quiz results.
- */
 export const submitQuizForTopic = async (req, res, next) => {
   try {
     const { quizId } = req.params;
-    const { answers } = req.body; // Expects: [{ questionId: 1, selectedAnswerIndex: 2 }, ...]
+    const { answers } = req.body;
     const { id: userId } = req.user;
 
     if (!answers || !Array.isArray(answers)) {
-      return res.status(400).json({ message: 'Invalid "answers" array.' });
+      return res.status(400).json({ message: "Invalid answers." });
     }
 
     const results = await GsService.submitQuiz(
@@ -183,6 +177,7 @@ export const submitQuizForTopic = async (req, res, next) => {
     next(error);
   }
 };
+
 export const getDueFlashcardsController = async (req, res, next) => {
   try {
     const { id: userId } = req.user;
@@ -196,14 +191,18 @@ export const getDueFlashcardsController = async (req, res, next) => {
 export const reviewFlashcardController = async (req, res, next) => {
   try {
     const { id: userId } = req.user;
-    const { flashcardId, rating } = req.body; // rating: 0, 1, or 2
+    const { flashcardId, rating } = req.body;
 
     if (flashcardId == null || rating == null) {
-      return res.status(400).json({ message: 'flashcardId and rating are required.' });
+      return res.status(400).json({ message: "Missing data." });
     }
 
-    await GsService.reviewFlashcard(userId, parseInt(flashcardId), parseInt(rating));
-    res.status(200).json({ message: 'Review recorded.' });
+    await GsService.reviewFlashcard(
+      userId,
+      parseInt(flashcardId),
+      parseInt(rating)
+    );
+    res.status(200).json({ message: "Review recorded." });
   } catch (error) {
     next(error);
   }
