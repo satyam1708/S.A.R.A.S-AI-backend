@@ -23,7 +23,6 @@ export const getChatHistory = async (req, res, next) => {
   }
 };
 
-// Non-streaming fallback
 export const postMessage = async (req, res, next) => {
   try {
     const { topicId } = req.params;
@@ -40,7 +39,7 @@ export const postMessage = async (req, res, next) => {
 };
 
 /**
- * High-Performance Streaming Endpoint
+ * Optimized Streaming Endpoint
  */
 export const streamMessage = async (req, res, next) => {
   try {
@@ -52,49 +51,56 @@ export const streamMessage = async (req, res, next) => {
       return res.status(400).json({ message: "Message is required" });
     }
 
-    // 1. Initialize Stream
     const { stream, sessionId } = await GsService.streamNewMessage(
       userId,
       parseInt(topicId),
       message
     );
 
-    // 2. Headers for SSE
+    // 1. SSE Headers
     res.setHeader("Content-Type", "text/event-stream");
     res.setHeader("Cache-Control", "no-cache");
     res.setHeader("Connection", "keep-alive");
 
     let fullResponse = "";
+    let isInterrupted = false;
 
-    // 3. Pipe Stream to Response
+    // 2. Interruption Handler
+    req.on("close", () => {
+      isInterrupted = true;
+      res.end();
+    });
+
+    // 3. Pipe Stream
     for await (const chunk of stream) {
+      if (isInterrupted || res.writableEnded) break;
+
       const content = chunk.choices[0]?.delta?.content || "";
       if (content) {
         fullResponse += content;
-        // Send strictly formatted JSON string to avoid parser errors on frontend
-        // Example: data: "Hello"
-        res.write(`data: ${JSON.stringify(content)}\n\n`);
+        // Standardized JSON format: {"content": "token"}
+        res.write(`data: ${JSON.stringify({ content })}\n\n`);
       }
     }
 
-    // 4. End of Stream
-    res.write("data: [DONE]\n\n");
-    res.end();
-
-    // 5. Async DB Save (Don't block the response)
-    // We save the full text after the connection closes
-    await GsService.saveAiResponse(sessionId, fullResponse);
+    // 4. End Stream & Save (only if completed)
+    if (!res.writableEnded && !isInterrupted) {
+      res.write("data: [DONE]\n\n");
+      res.end();
+      // Only save complete responses to keep chat history clean
+      await GsService.saveAiResponse(sessionId, fullResponse);
+    }
   } catch (error) {
     console.error("Stream Error:", error);
-    // If headers not sent, send JSON error
     if (!res.headersSent) {
       res.status(500).json({ message: error.message });
-    } else {
+    } else if (!res.writableEnded) {
       res.end();
     }
   }
 };
 
+// ... (Keep existing handlers for markTopicAsLearned, getRevision, createChatFromContext, Quiz, Flashcards) ...
 export const markTopicAsLearned = async (req, res, next) => {
   try {
     const { topicId } = req.params;
@@ -118,18 +124,14 @@ export const createChatFromContext = async (req, res, next) => {
   try {
     const { id: userId } = req.user;
     const { context } = req.body;
-
     if (!context)
       return res.status(400).json({ message: "Context is required" });
-
     const newTopic = await GsService.createTopicFromContext(userId, context);
     res.status(201).json(newTopic);
   } catch (error) {
     next(error);
   }
 };
-
-// --- Student Quiz & Flashcard Controllers ---
 
 export const getQuizzesForTopic = async (req, res, next) => {
   try {
@@ -162,11 +164,9 @@ export const submitQuizForTopic = async (req, res, next) => {
     const { quizId } = req.params;
     const { answers } = req.body;
     const { id: userId } = req.user;
-
     if (!answers || !Array.isArray(answers)) {
       return res.status(400).json({ message: "Invalid answers." });
     }
-
     const results = await GsService.submitQuiz(
       userId,
       parseInt(quizId),
@@ -192,11 +192,9 @@ export const reviewFlashcardController = async (req, res, next) => {
   try {
     const { id: userId } = req.user;
     const { flashcardId, rating } = req.body;
-
     if (flashcardId == null || rating == null) {
       return res.status(400).json({ message: "Missing data." });
     }
-
     await GsService.reviewFlashcard(
       userId,
       parseInt(flashcardId),
