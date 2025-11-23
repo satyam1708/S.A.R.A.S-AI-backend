@@ -45,7 +45,7 @@ gsRouter.post('/quiz/check-answer', authMiddleware, checkAnswer);
 gsRouter.post('/quiz/submit/:quizId', authMiddleware, submitQuizForTopic);
 gsRouter.get('/flashcards/due', authMiddleware, getDueFlashcardsController);
 gsRouter.post('/flashcards/review', authMiddleware, reviewFlashcardController);
-gsRouter.post('/image/generate', authMiddleware, generateImage);
+gsRouter.post('/chat/:topicId/image', authMiddleware, generateImage);
 
 
 export default gsRouter;

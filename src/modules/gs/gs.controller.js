@@ -207,15 +207,19 @@ export const reviewFlashcardController = async (req, res, next) => {
   }
 };
 
+// [UPDATED] Image Generation Controller
 export const generateImage = async (req, res, next) => {
   try {
+    const { topicId } = req.params; // Get context
     const { prompt } = req.body;
+    const { id: userId } = req.user;
+
     if (!prompt) return res.status(400).json({ message: "Prompt is required" });
 
-    console.log(`🎨 Generating image for: ${prompt}`);
-    const imageUrl = await generateEducationalImage(prompt);
+    // Call the smart service that saves everything
+    const message = await GsService.generateAndSaveImage(userId, parseInt(topicId), prompt);
     
-    res.json({ imageUrl });
+    res.json(message); // Return the full message object (with ID, content, imageUrl)
   } catch (error) {
     next(error);
   }

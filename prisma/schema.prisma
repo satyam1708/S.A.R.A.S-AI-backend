@@ -255,6 +255,7 @@ model ChatMessage {
   sessionId Int
   role      String 
   content   String      @db.Text
+  imageUrl  String?
   createdAt DateTime    @default(now())
 
   @@index([sessionId]) // Performance Index

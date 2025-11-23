@@ -4,8 +4,43 @@ import { toSql } from 'pgvector/pg';
 import {
   getChatCompletion,
   getChatCompletionStream,
-  getEmbedding
+  getEmbedding,
+  generateEducationalImage
 } from "../../services/aiService.js";
+
+// [NEW] Generate Image and Save History
+export const generateAndSaveImage = async (userId, topicId, prompt) => {
+  // 1. Ensure Session Exists
+  const session = await prisma.chatSession.upsert({
+    where: { userId_topicId: { userId, topicId } },
+    create: { userId, topicId },
+    update: {},
+  });
+
+  // 2. Save the User's Prompt (Message we wrote to generate the image)
+  await prisma.chatMessage.create({
+    data: {
+      role: "user",
+      content: `Generate an image for: ${prompt}`, // Clear context in history
+      sessionId: session.id,
+    },
+  });
+
+  // 3. Generate Image via AI
+  const imageUrl = await generateEducationalImage(prompt);
+
+  // 4. Save the AI's Image Response
+  const aiMessage = await prisma.chatMessage.create({
+    data: {
+      role: "assistant",
+      content: "Here is the visualization you requested:",
+      imageUrl: imageUrl, // Store the link!
+      sessionId: session.id,
+    },
+  });
+
+  return aiMessage; // Return full message object
+};
 
 // Get all subjects and their nested topics for the UI
 export const getSubjectsAndTopics = async () => {
