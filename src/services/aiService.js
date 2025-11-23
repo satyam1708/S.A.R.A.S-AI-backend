@@ -12,8 +12,24 @@ const chatDeployment = process.env.AZURE_OPENAI_CHAT_DEPLOYMENT;
 const embeddingEndpoint = process.env.AZURE_OPENAI_EMBEDDING_ENDPOINT;
 const embeddingDeployment = process.env.AZURE_OPENAI_EMBEDDING_DEPLOYMENT;
 
+// --- Initialize DALL-E Client ---
+const dalleEndpoint = process.env.AZURE_OPENAI_DALLE_ENDPOINT;
+const dalleDeployment = process.env.AZURE_OPENAI_DALLE_DEPLOYMENT;
+let dalleClient;
+
 let chatClient;
 let embeddingClient;
+
+if (dalleEndpoint && process.env.AZURE_OPENAI_KEY) {
+  dalleClient = new AzureOpenAI({
+    endpoint: dalleEndpoint,
+    apiKey: process.env.AZURE_OPENAI_KEY, // Reusing the shared key
+    apiVersion: "2024-02-01", // DALL-E 3 often requires a specific API version
+    deployment: dalleDeployment,
+  });
+} else {
+  console.warn("⚠️ DALL-E 3 environment variables missing. Image generation will fail.");
+}
 
 // --- Initialize Chat Client ---
 if (!chatEndpoint || !azureApiKey || !chatDeployment) {
@@ -550,5 +566,28 @@ export const generateEnglishDose = async () => {
   } catch (error) {
     console.error("AI English Gen Error:", error);
     throw new Error("Failed to generate English dose.");
+  }
+};
+
+export const generateEducationalImage = async (prompt) => {
+  if (!dalleClient) throw new Error("DALL-E client not initialized.");
+
+  try {
+    // Enhance prompt for educational clarity
+    const enhancedPrompt = `Educational illustration, detailed and clear, realistic style: ${prompt}`;
+
+    const result = await dalleClient.images.generate({
+      model: dalleDeployment, // e.g., "dall-e-3"
+      prompt: enhancedPrompt,
+      n: 1,
+      size: "1024x1024",
+      quality: "standard",
+      style: "natural", // or "vivid"
+    });
+
+    return result.data[0].url;
+  } catch (error) {
+    console.error("DALL-E Generation Error:", error);
+    throw new Error("Failed to generate image.");
   }
 };

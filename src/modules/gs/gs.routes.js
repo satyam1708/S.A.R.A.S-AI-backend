@@ -12,6 +12,7 @@ import {
   checkAnswer,        // <-- [NEW]
   getDueFlashcardsController,  // <-- 1. IMPORT NEW
   reviewFlashcardController,
+  generateImage,
 } from './gs.controller.js';
 import { authMiddleware } from '../../middleware/auth.middleware.js';
 
@@ -44,6 +45,7 @@ gsRouter.post('/quiz/check-answer', authMiddleware, checkAnswer);
 gsRouter.post('/quiz/submit/:quizId', authMiddleware, submitQuizForTopic);
 gsRouter.get('/flashcards/due', authMiddleware, getDueFlashcardsController);
 gsRouter.post('/flashcards/review', authMiddleware, reviewFlashcardController);
+gsRouter.post('/image/generate', authMiddleware, generateImage);
 
 
 export default gsRouter;

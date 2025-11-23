@@ -1,5 +1,6 @@
 // src/modules/gs/gs.controller.js
 import * as GsService from "./gs.service.js";
+import { generateEducationalImage } from "../../services/aiService.js";
 
 export const getSubjects = async (req, res, next) => {
   try {
@@ -201,6 +202,20 @@ export const reviewFlashcardController = async (req, res, next) => {
       parseInt(rating)
     );
     res.status(200).json({ message: "Review recorded." });
+  } catch (error) {
+    next(error);
+  }
+};
+
+export const generateImage = async (req, res, next) => {
+  try {
+    const { prompt } = req.body;
+    if (!prompt) return res.status(400).json({ message: "Prompt is required" });
+
+    console.log(`🎨 Generating image for: ${prompt}`);
+    const imageUrl = await generateEducationalImage(prompt);
+    
+    res.json({ imageUrl });
   } catch (error) {
     next(error);
   }
