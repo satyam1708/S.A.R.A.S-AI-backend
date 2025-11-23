@@ -126,17 +126,14 @@ export const postRadioChatStream = async (req, res) => {
       return res.status(400).json({ message: "Message required" });
     }
 
-    // 1. SSE Headers
-    res.setHeader("Content-Type", "text/event-stream");
-    res.setHeader("Cache-Control", "no-cache");
-    res.setHeader("Connection", "keep-alive");
-
-    // 2. Interruption Handling: Stop processing if client disconnects
-    req.on("close", () => {
-      res.end();
+    // 1. Set SSE Headers properly
+    res.writeHead(200, {
+      "Content-Type": "text/event-stream",
+      "Cache-Control": "no-cache",
+      "Connection": "keep-alive",
     });
 
-    // 3. Prepare Context
+    // 2. Prepare Context
     const context = `Here is the full broadcast script I am reading from:\n${broadcastScript}\n\nAnswer the user's question briefly and conversationally based on this.`;
 
     const messages = [
@@ -148,24 +145,41 @@ export const postRadioChatStream = async (req, res) => {
       { role: "user", content: userMessage },
     ];
 
-    const stream = await getChatCompletionStream(messages);
+    // 3. Start Stream
+    try {
+      const stream = await getChatCompletionStream(messages);
 
-    for await (const chunk of stream) {
-      if (res.writableEnded) break; // Stop if client disconnected
+      for await (const chunk of stream) {
+        // Check if the client has disconnected
+        if (res.writableEnded || res.closed) break; 
 
-      const content = chunk.choices[0]?.delta?.content || "";
-      if (content) {
-        // Standardized JSON format: {"content": "token"}
-        res.write(`data: ${JSON.stringify({ content })}\n\n`);
+        const content = chunk.choices[0]?.delta?.content || "";
+        
+        if (content) {
+          // Write the data ensuring it ends with double newline
+          res.write(`data: ${JSON.stringify({ content })}\n\n`);
+          
+          // Optional: Flush if your environment requires it (not needed for standard Express)
+          // if (res.flush) res.flush(); 
+        }
+      }
+    } catch (streamError) {
+      console.error("Stream Generation Error:", streamError);
+      // If the stream crashes mid-way, try to tell the client
+      if (!res.writableEnded) {
+        res.write(`data: ${JSON.stringify({ content: " [Connection Error]" })}\n\n`);
       }
     }
 
+    // 4. Clean Termination
     if (!res.writableEnded) {
       res.write("data: [DONE]\n\n");
       res.end();
     }
+
   } catch (error) {
-    console.error("Radio Stream Error:", error);
+    console.error("Controller Error:", error);
+    // Only send JSON error if headers haven't been sent
     if (!res.headersSent) {
       res.status(500).json({ message: error.message });
     } else if (!res.writableEnded) {
