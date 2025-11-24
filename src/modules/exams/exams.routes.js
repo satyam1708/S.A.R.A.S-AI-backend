@@ -8,6 +8,7 @@ const router = express.Router();
 
 // Student Routes
 router.get('/', authMiddleware, examController.listMocks);
+router.get('/:id', authMiddleware, examController.getExamDetails);
 router.post('/submit', authMiddleware, examController.submitExam);
 
 // Admin Routes (Generation & Upload)

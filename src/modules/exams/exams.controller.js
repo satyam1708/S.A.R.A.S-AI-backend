@@ -98,3 +98,18 @@ export const uploadPYQ = async (req, res) => {
     }
   }
 };
+
+export const getExamDetails = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const exam = await examService.getMockTestById(id);
+    
+    if (!exam) {
+      return res.status(404).json({ error: "Exam not found" });
+    }
+    
+    res.json(exam);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+};
