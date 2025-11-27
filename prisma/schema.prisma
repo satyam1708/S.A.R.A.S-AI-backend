@@ -208,6 +208,7 @@ model MockTestAttempt {
   timeTaken     Int      
   correctCount  Int
   wrongCount    Int
+  warningCount  Int      @default(0)
   skippedCount  Int
   analysisJson  Json?    
   aiFeedback    String?  @db.Text 

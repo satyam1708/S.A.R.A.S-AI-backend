@@ -30,14 +30,23 @@ export const listMocks = async (req, res) => {
 export const submitExam = async (req, res) => {
   try {
     const userId = req.user.id;
-    const { mockTestId, answers } = req.body;
-    const result = await examService.submitMockAttempt(userId, mockTestId, answers);
+    // Extract warningCount from the request body
+    const { mockTestId, answers, timeTaken, warningCount } = req.body; 
+
+    // Pass warningCount to the service
+    const result = await examService.submitMockAttempt(userId, {
+      mockTestId, 
+      answers, 
+      timeTaken,
+      warningCount: warningCount || 0 // Default to 0 if not sent
+    });
+
     res.json(result);
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    console.error("Submit Error:", error);
+    res.status(500).json({ error: "Failed to submit exam" });
   }
 };
-
 export const uploadPYQ = async (req, res) => {
   const file = req.file;
   
