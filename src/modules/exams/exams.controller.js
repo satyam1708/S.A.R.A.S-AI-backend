@@ -115,6 +115,7 @@ export const getExamDetails = async (req, res) => {
 };
 export const getMyResults = async (req, res) => {
   try {
+    // req.user comes from authMiddleware
     const userId = req.user.id;
     const history = await examService.getUserExamHistory(userId);
     res.json(history);
