@@ -10,6 +10,7 @@ const router = express.Router();
 router.get('/', authMiddleware, examController.listMocks);
 router.get('/:id', authMiddleware, examController.getExamDetails);
 router.post('/submit', authMiddleware, examController.submitExam);
+router.get('/my-results', authMiddleware, examController.getMyResults);
 
 // Admin Routes (Generation & Upload)
 router.post('/generate/:courseId', authMiddleware, adminMiddleware, examController.generateMock);

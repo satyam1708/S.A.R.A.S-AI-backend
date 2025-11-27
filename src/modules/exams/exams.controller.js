@@ -113,3 +113,13 @@ export const getExamDetails = async (req, res) => {
     res.status(500).json({ error: error.message });
   }
 };
+export const getMyResults = async (req, res) => {
+  try {
+    const userId = req.user.id;
+    const history = await examService.getUserExamHistory(userId);
+    res.json(history);
+  } catch (error) {
+    console.error("Fetch Results Error:", error);
+    res.status(500).json({ error: "Failed to fetch exam history" });
+  }
+};

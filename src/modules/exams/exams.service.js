@@ -390,3 +390,25 @@ export const getMockTestById = async (id) => {
     },
   });
 };
+export const getUserExamHistory = async (userId) => {
+  return await prisma.mockTestAttempt.findMany({
+    where: { 
+      userId: parseInt(userId) 
+    },
+    include: {
+      mockTest: {
+        select: {
+          title: true,
+          totalMarks: true,
+          durationMin: true,
+          course: {
+            select: { name: true }
+          }
+        }
+      }
+    },
+    orderBy: { 
+      submittedAt: 'desc' 
+    }
+  });
+};
