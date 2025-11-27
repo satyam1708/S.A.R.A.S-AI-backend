@@ -26,7 +26,6 @@ export const listMocks = async (req, res) => {
     res.status(500).json({ error: error.message });
   }
 };
-
 export const submitExam = async (req, res) => {
   try {
     const userId = req.user.id;
