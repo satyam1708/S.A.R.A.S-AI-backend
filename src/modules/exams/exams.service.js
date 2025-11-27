@@ -277,7 +277,11 @@ export const getMockTestsForCourse = async (courseId) => {
   });
 };
 
-export const submitMockAttempt = async (userId, mockTestId, answers) => {
+export const submitMockAttempt = async (userId, data) => {
+  // 1. Destructure the payload. 
+  // We now expect an object 'data' containing mockTestId, answers, warningCount, and timeTaken
+  const { mockTestId, answers, warningCount, timeTaken } = data;
+
   const mock = await prisma.mockTest.findUnique({
     where: { id: parseInt(mockTestId) },
     select: {
@@ -307,21 +311,21 @@ export const submitMockAttempt = async (userId, mockTestId, answers) => {
   const questionMap = new Map(mock.questions.map((mq) => [mq.questionId, mq]));
   const weakTopicsSet = new Set();
   const attemptData = [];
-  let timeTaken = 0;
 
+  // 2. Iterate through answers
   for (const ans of answers) {
     const mockQ = questionMap.get(ans.questionId);
     if (!mockQ) continue;
 
-    timeTaken += ans.timeTaken || 0;
-    const selectedIndex = ans.selectedIndex;
+    // Note: Frontend now sends 'selectedOption', so we check that
+    const selectedIndex = ans.selectedOption;
 
     if (selectedIndex === null || selectedIndex === undefined) {
       attemptData.push({
         questionId: ans.questionId,
         selectedOption: null,
         isCorrect: false,
-        timeTaken: ans.timeTaken,
+        timeTaken: ans.timeTaken || 0, // Save individual question time if available
       });
       continue;
     }
@@ -342,17 +346,19 @@ export const submitMockAttempt = async (userId, mockTestId, answers) => {
       questionId: ans.questionId,
       selectedOption: selectedIndex,
       isCorrect,
-      timeTaken: ans.timeTaken,
+      timeTaken: ans.timeTaken || 0,
     });
   }
 
+  // 3. Generate AI Analysis
   const aiAnalysis = await aiService.generateExamAnalysis(
     score,
     mock.totalMarks,
     Array.from(weakTopicsSet),
-    timeTaken
+    timeTaken || 0
   );
 
+  // 4. Save Attempt with Warning Count
   return await prisma.mockTestAttempt.create({
     data: {
       userId: parseInt(userId),
@@ -361,7 +367,8 @@ export const submitMockAttempt = async (userId, mockTestId, answers) => {
       correctCount: correct,
       wrongCount: wrong,
       skippedCount: mock.questions.length - (correct + wrong),
-      timeTaken,
+      timeTaken: timeTaken || 0,       // Total exam duration from frontend
+      warningCount: warningCount || 0, // <--- Security violation count
       analysisJson: aiAnalysis || {},
       aiFeedback: aiAnalysis?.summary || "Keep practicing!",
       answers: { create: attemptData },
@@ -385,15 +392,15 @@ export const getMockTestById = async (id) => {
             },
           },
         },
-        orderBy: { questionId: 'asc' },
+        orderBy: { questionId: "asc" },
       },
     },
   });
 };
 export const getUserExamHistory = async (userId) => {
   return await prisma.mockTestAttempt.findMany({
-    where: { 
-      userId: parseInt(userId) 
+    where: {
+      userId: parseInt(userId),
     },
     include: {
       mockTest: {
@@ -402,13 +409,13 @@ export const getUserExamHistory = async (userId) => {
           totalMarks: true,
           durationMin: true,
           course: {
-            select: { name: true }
-          }
-        }
-      }
+            select: { name: true },
+          },
+        },
+      },
     },
-    orderBy: { 
-      submittedAt: 'desc' 
-    }
+    orderBy: {
+      submittedAt: "desc",
+    },
   });
 };
