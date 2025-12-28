@@ -120,31 +120,30 @@ export const processPreviousYearPaper = async (
 };
 
 /**
- * THE CORE EXAM GENERATOR
- * Creates a full Mock Test for a Course (e.g. SSC CGL)
+ * THE CORE EXAM GENERATOR (UPDATED)
+ * Supports 'AI-Only' generation and 'Hybrid' filling.
  */
-export const generateMockExam = async (courseId, title) => {
+export const generateMockExam = async (courseId, title, useAI = false) => {
   // 1. Get Course Structure
   const course = await prisma.course.findUnique({
     where: { id: parseInt(courseId) },
     include: {
-      subjects: { include: { subject: true } },
+      subjects: { include: { subject: { include: { topics: true } } } }, // Include topics
     },
   });
 
   if (!course) throw new Error("Course not found");
 
-  // Check if syllabus exists
   if (course.subjects.length === 0) {
     throw new Error(
-      "Generation Failed: This course has no subjects linked. Go to Admin > Courses > Manage Syllabus to add subjects first."
+      "Generation Failed: Syllabus missing. Please add subjects to this course in Admin."
     );
   }
 
   // 2. Create the Mock Test Shell
   const mockTest = await prisma.mockTest.create({
     data: {
-      title: title || `${course.name} - AI Generated Mock`,
+      title: title || `${course.name} - ${useAI ? 'AI Generated' : 'Standard'} Mock`,
       courseId: course.id,
       durationMin: 60,
       totalMarks: 0,
@@ -158,67 +157,77 @@ export const generateMockExam = async (courseId, title) => {
     const countNeeded = config.questionCount;
     let questionsToAdd = [];
 
-    // A. Dynamic Generation (Current Affairs)
+    // --- STRATEGY: Determine Source ---
+    // Case A: Current Affairs (Always AI or specific logic)
     if (
       subjectName.toLowerCase().includes("current affairs") ||
       subjectName.toLowerCase().includes("news")
     ) {
-      console.log(`Generating fresh Current Affairs for ${subjectName}...`);
+        // ... (Keep your existing Current Affairs logic here) ...
+        // For brevity, assuming you keep the existing logic or use the new AI function
+        const generatedQs = await aiService.generateQuestionsFromSyllabus(
+          course.name, 
+          `Current Affairs (Last 6 months)`, 
+          countNeeded
+        );
+        
+        // Save to DB
+        const savePromises = generatedQs.map((gq) =>
+          prisma.questionBank.create({
+            data: {
+              questionText: gq.questionText,
+              options: gq.options,
+              correctIndex: gq.correctIndex,
+              explanation: gq.explanation,
+              topicId: config.subjectId, // Map to subject's main ID/topic
+              difficulty: gq.difficulty || "MEDIUM",
+            },
+          })
+        );
+        questionsToAdd = await Promise.all(savePromises);
 
-      // Mock News Data (Replace with DB fetch in production)
-      const recentNews = [
-        {
-          title: "Budget 2025",
-          description: "Govt announces new tax slabs...",
-        },
-        { title: "Olympics 2024", description: "India wins 5 golds..." },
-      ];
-
-      const generatedQs = await aiService.generateCurrentAffairsQuestions(
-        recentNews,
-        countNeeded
-      );
-
-      const savePromises = generatedQs.map((gq) =>
-        prisma.questionBank.create({
-          data: {
-            questionText: gq.questionText,
-            options: gq.options,
-            correctIndex: gq.correctIndex,
-            explanation: gq.explanation,
-            topicId: config.subjectId,
-            difficulty: "MEDIUM",
-          },
-        })
-      );
-      questionsToAdd = await Promise.all(savePromises);
     } else {
-      // B. Static Bank (History, Math, etc.)
+      // Case B: Standard Subjects (History, Math, etc.)
+      
+      // 1. Try fetching from DB first (unless AI is forced)
+      if (!useAI) {
+        questionsToAdd = await prisma.questionBank.findMany({
+          where: { topic: { subjectId: config.subjectId } },
+          take: countNeeded,
+        });
+      }
 
-      // Try strict match first (Topic must belong to Subject)
-      questionsToAdd = await prisma.questionBank.findMany({
-        where: {
-          topic: { subjectId: config.subjectId },
-        },
-        take: countNeeded,
-      });
-
-      // FALLBACK: If strict match fails (e.g., questions are in a generic topic),
-      // try to find ANY questions, but we ideally want strict mapping.
+      // 2. If we need more questions (or AI is forced), Generate & Save
       if (questionsToAdd.length < countNeeded) {
-        console.warn(
-          `[ExamGen] Not enough questions for ${subjectName} (Found ${questionsToAdd.length}, Needed ${countNeeded}).`
+        const deficit = countNeeded - questionsToAdd.length;
+        console.log(`[AI Gen] Generating ${deficit} questions for ${subjectName}...`);
+
+        const generatedQs = await aiService.generateQuestionsFromSyllabus(
+            course.name, 
+            subjectName, 
+            deficit
         );
 
-        // You can enable this fallback if you want to fill the paper with *any* question
-        // just to prevent failure, but it might be off-topic.
-        /*
-        const randomExtras = await prisma.questionBank.findMany({
-          take: countNeeded - questionsToAdd.length,
-          where: { id: { notIn: questionsToAdd.map(q => q.id) } }
-        });
-        questionsToAdd = [...questionsToAdd, ...randomExtras];
-        */
+        // Find a valid topic ID to attach these questions to
+        // If the subject has topics, pick the first one, else use the subjectId (if your schema allows) or a fallback
+        const targetTopicId = config.subject.topics[0]?.id || config.subjectId; 
+        
+        // Save generated questions to DB (Growing your asset library)
+        const savePromises = generatedQs.map((gq) =>
+          prisma.questionBank.create({
+            data: {
+              questionText: gq.questionText,
+              options: gq.options,
+              correctIndex: gq.correctIndex,
+              explanation: gq.explanation,
+              topicId: targetTopicId, 
+              difficulty: gq.difficulty || "MEDIUM",
+            },
+          })
+        );
+        
+        const newDbQuestions = await Promise.all(savePromises);
+        questionsToAdd = [...questionsToAdd, ...newDbQuestions];
       }
     }
 
@@ -234,27 +243,17 @@ export const generateMockExam = async (courseId, title) => {
   const results = await Promise.all(subjectProcessingPromises);
   const allMockQuestions = results.flat();
 
-  // --- CRITICAL FIX: Prevent empty exam creation ---
   if (allMockQuestions.length === 0) {
-    // Delete the empty shell so it doesn't clutter the dashboard
     await prisma.mockTest.delete({ where: { id: mockTest.id } });
-    throw new Error(
-      "Generation Failed: No questions found for this course's subjects. Please upload a PYQ specifically for this course to populate the Question Bank."
-    );
+    throw new Error("Generation Failed: AI could not generate questions. Please check API keys.");
   }
 
   // 4. Bulk Insert Connections
-  await prisma.mockTestQuestion.createMany({
-    data: allMockQuestions,
-  });
+  await prisma.mockTestQuestion.createMany({ data: allMockQuestions });
 
-  // 5. Calculate Total Marks
-  const grandTotalMarks = allMockQuestions.reduce(
-    (sum, item) => sum + item.marks,
-    0
-  );
+  // 5. Calculate Total Marks & Update
+  const grandTotalMarks = allMockQuestions.reduce((sum, item) => sum + item.marks, 0);
 
-  // 6. Final Update
   await prisma.mockTest.update({
     where: { id: mockTest.id },
     data: { totalMarks: grandTotalMarks, isLive: true },

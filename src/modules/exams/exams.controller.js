@@ -8,8 +8,11 @@ import os from 'os';
 export const generateMock = async (req, res) => {
   try {
     const { courseId } = req.params;
-    const { title } = req.body;
-    const mock = await examService.generateMockExam(courseId, title);
+    // Extract useAI flag from body
+    const { title, useAI } = req.body; 
+    
+    // Pass useAI to the service
+    const mock = await examService.generateMockExam(courseId, title, useAI);
     res.status(201).json(mock);
   } catch (error) {
     console.error(error);

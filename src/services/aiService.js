@@ -591,3 +591,51 @@ export const generateEducationalImage = async (prompt) => {
     throw new Error("Failed to generate image.");
   }
 };
+
+export const generateQuestionsFromSyllabus = async (courseName, subjectName, count = 5) => {
+  if (!chatClient) throw new Error("AI chat client is not initialized.");
+
+  const messages = [
+    {
+      role: "system",
+      content: `You are a senior question paper setter for Indian Competitive Exams (like ${courseName}).
+      Your task is to generate ${count} high-quality Multiple Choice Questions (MCQs) for the subject: '${subjectName}'.
+      
+      RULES:
+      1. Pattern & Difficulty: Strictly follow the difficulty level and question pattern of ${courseName}.
+      2. Syllabus: Cover important topics frequently asked in ${subjectName} for this exam.
+      3. Format: Output MUST be a single valid JSON object.
+      
+      JSON FORMAT:
+      {
+        "questions": [
+          {
+            "questionText": "Question string...",
+            "options": ["Option A", "Option B", "Option C", "Option D"],
+            "correctIndex": 0, // 0-3
+            "explanation": "Brief explanation of why this is correct.",
+            "difficulty": "MEDIUM" // EASY, MEDIUM, or HARD
+          }
+        ]
+      }`
+    },
+    {
+      role: "user",
+      content: `Generate ${count} questions for ${subjectName}.`
+    }
+  ];
+
+  try {
+    const result = await chatClient.chat.completions.create({
+      messages: messages,
+      max_tokens: 3500,
+      response_format: { type: "json_object" },
+    });
+
+    const parsed = JSON.parse(result.choices[0].message.content);
+    return parsed.questions || [];
+  } catch (error) {
+    console.error(`Error generating syllabus questions for ${subjectName}:`, error);
+    return []; // Return empty array on failure to allow other subjects to proceed
+  }
+};
