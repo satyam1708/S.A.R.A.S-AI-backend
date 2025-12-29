@@ -14,7 +14,7 @@ const router = express.Router();
 router.get('/', authMiddleware, examController.listMocks);
 
 // 2. Get History (MOVED UP - Must be before /:id)
-router.get('/history/my-results', authMiddleware, examController.getMyResults);
+router.get('/my-results', authMiddleware, examController.getMyResults);
 
 // 3. Get Exam Instructions/Details (Wildcard route comes last for GETs)
 router.get('/:id', authMiddleware, examController.getExamDetails);
