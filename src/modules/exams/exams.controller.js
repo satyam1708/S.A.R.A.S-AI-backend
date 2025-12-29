@@ -12,6 +12,11 @@ export const startExam = async (req, res) => {
     const userId = req.user.id;
     const { mockId } = req.params;
     
+    // Validation
+    if (!mockId || isNaN(parseInt(mockId))) {
+        return res.status(400).json({ error: "Invalid Mock ID provided." });
+    }
+
     const attempt = await examService.startExamSession(userId, mockId);
     res.status(201).json(attempt);
   } catch (error) {
@@ -24,9 +29,11 @@ export const syncExamProgress = async (req, res) => {
   try {
     const userId = req.user.id;
     const { attemptId } = req.params;
-    // answers = array of { questionId, selectedOption, timeTaken }
-    // timeTaken = total seconds elapsed in exam so far
     const { answers, timeTaken, warningCount } = req.body;
+
+    if (!attemptId || isNaN(parseInt(attemptId))) {
+        return res.status(400).json({ error: "Invalid Attempt ID." });
+    }
 
     const result = await examService.saveHeartbeat(
       parseInt(attemptId), 
@@ -47,9 +54,11 @@ export const finishExam = async (req, res) => {
   try {
     const userId = req.user.id;
     const { attemptId } = req.params;
-    
-    // We do one final sync of answers before calculating score
     const { answers, timeTaken, warningCount } = req.body;
+
+    if (!attemptId || isNaN(parseInt(attemptId))) {
+        return res.status(400).json({ error: "Invalid Attempt ID." });
+    }
 
     const result = await examService.finalizeExam(
       parseInt(attemptId),
@@ -66,23 +75,33 @@ export const finishExam = async (req, res) => {
   }
 };
 
-// --- EXISTING METHODS (UNCHANGED LOGIC, JUST EXPORTS) ---
+// --- EXISTING METHODS ---
 
 export const generateMock = async (req, res) => {
   try {
     const { courseId } = req.params;
-    const { title, useAI } = req.body; 
-    const mock = await examService.generateMockExam(courseId, title, useAI);
+    // Extract everything needed for generation
+    const { title, useAI, examType, subjectId } = req.body; 
+    
+    const mock = await examService.generateMockExam(
+        courseId, 
+        title, 
+        useAI, 
+        examType, 
+        subjectId
+    );
     res.status(201).json(mock);
   } catch (error) {
-    console.error(error);
-    res.status(500).json({ error: "Failed to generate exam" });
+    console.error("Generation Error:", error);
+    res.status(500).json({ error: "Failed to generate exam: " + error.message });
   }
 };
 
 export const listMocks = async (req, res) => {
   try {
     const { courseId } = req.query;
+    if (!courseId) return res.json([]); // Return empty if no course selected
+    
     const tests = await examService.getMockTestsForCourse(courseId);
     res.json(tests);
   } catch (error) {
@@ -90,7 +109,7 @@ export const listMocks = async (req, res) => {
   }
 };
 
-// Deprecated: Old submit endpoint (keep if needed for backward compatibility during migration)
+// Deprecated: Old submit endpoint 
 export const submitExam = async (req, res) => {
     res.status(410).json({ error: "Please use the new /start and /submit flow." });
 };
@@ -133,10 +152,19 @@ export const uploadPYQ = async (req, res) => {
 export const getExamDetails = async (req, res) => {
   try {
     const { id } = req.params;
-    const exam = await examService.getMockTestById(id);
+    
+    // --- FIX: HANDLE UNDEFINED/INVALID ID ---
+    const parsedId = parseInt(id);
+    if (isNaN(parsedId)) {
+        return res.status(400).json({ error: "Invalid Exam ID provided" });
+    }
+
+    const exam = await examService.getMockTestById(parsedId);
     if (!exam) return res.status(404).json({ error: "Exam not found" });
+    
     res.json(exam);
   } catch (error) {
+    console.error("Get Exam Error:", error);
     res.status(500).json({ error: error.message });
   }
 };

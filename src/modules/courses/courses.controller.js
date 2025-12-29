@@ -1,7 +1,7 @@
-// src/modules/courses/courses.controller.js
 import * as courseService from './courses.service.js';
 
-// ... (Keep existing listCourses, getCourseDetails, createNewCourse) ...
+// --- COURSE CRUD ---
+
 export const listCourses = async (req, res) => {
   try {
     const courses = await courseService.getAllCourses();
@@ -30,8 +30,6 @@ export const createNewCourse = async (req, res) => {
   }
 };
 
-// --- NEW FUNCTIONS ---
-
 export const updateCourse = async (req, res) => {
   try {
     const { id } = req.params;
@@ -52,30 +50,13 @@ export const deleteCourse = async (req, res) => {
   }
 };
 
-export const unlinkSubject = async (req, res) => {
-  try {
-    const { id: courseId, subjectId } = req.params;
-    await courseService.removeSubjectFromCourse(courseId, subjectId);
-    res.json({ message: 'Subject unlinked successfully' });
-  } catch (error) {
-    res.status(500).json({ error: error.message });
-  }
-};
+// --- SYLLABUS & EXAM PATTERN MANAGEMENT ---
 
-// ... (Keep existing linkSubject, createSubject, listSubjects) ...
-export const linkSubject = async (req, res) => {
+export const listSubjects = async (req, res) => {
   try {
-    const { id: courseId } = req.params; 
-    const { subjectId, questionCount, marksPerQ, negativeMarks, orderIndex } = req.body;
-    const link = await courseService.addSubjectToCourse(courseId, subjectId, {
-      questionCount,
-      marksPerQ,
-      negativeMarks,
-      orderIndex
-    });
-    res.status(201).json(link);
+    const subjects = await courseService.getAllSubjects();
+    res.json(subjects);
   } catch (error) {
-    console.error("Link Subject Error:", error);
     res.status(500).json({ error: error.message });
   }
 };
@@ -89,10 +70,42 @@ export const createSubject = async (req, res) => {
   }
 };
 
-export const listSubjects = async (req, res) => {
+export const linkSubject = async (req, res) => {
   try {
-    const subjects = await courseService.getAllSubjects();
-    res.json(subjects);
+    const { id: courseId } = req.params; 
+    // Difficulty config is optional, default handled in service
+    const { subjectId, questionCount, marksPerQ, negativeMarks, orderIndex, difficultyConfig } = req.body;
+    
+    const link = await courseService.addSubjectToCourse(courseId, subjectId, {
+      questionCount,
+      marksPerQ,
+      negativeMarks,
+      orderIndex,
+      difficultyConfig
+    });
+    res.status(201).json(link);
+  } catch (error) {
+    console.error("Link Subject Error:", error);
+    res.status(500).json({ error: error.message });
+  }
+};
+
+// [NEW] Update the configuration of an existing subject link
+export const updateSubjectConfig = async (req, res) => {
+  try {
+    const { id: courseId, subjectId } = req.params;
+    const updatedLink = await courseService.updateCourseSubjectConfig(courseId, subjectId, req.body);
+    res.json(updatedLink);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+};
+
+export const unlinkSubject = async (req, res) => {
+  try {
+    const { id: courseId, subjectId } = req.params;
+    await courseService.removeSubjectFromCourse(courseId, subjectId);
+    res.json({ message: 'Subject unlinked successfully' });
   } catch (error) {
     res.status(500).json({ error: error.message });
   }

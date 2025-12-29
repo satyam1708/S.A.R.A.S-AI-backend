@@ -7,12 +7,8 @@ import * as aiService from "../../services/aiService.js";
 
 /**
  * Step 1: Initialize the Exam
- * Creates the 'IN_PROGRESS' record so we can track it.
  */
 export const startExamSession = async (userId, mockTestId) => {
-  // Check if user already has an active attempt for this mock?
-  // For now, we allow multiple attempts, but in a strict exam, you might block it.
-
   const attempt = await prisma.mockTestAttempt.create({
     data: {
       userId: parseInt(userId),
@@ -32,7 +28,6 @@ export const startExamSession = async (userId, mockTestId) => {
 
 /**
  * Step 2: Periodic Heartbeat
- * Saves answers as they come in. If browser crashes, these are safe.
  */
 export const saveHeartbeat = async (
   attemptId,
@@ -41,7 +36,6 @@ export const saveHeartbeat = async (
   timeTaken,
   warningCount
 ) => {
-  // 1. Verify Ownership
   const attempt = await prisma.mockTestAttempt.findUnique({
     where: { id: attemptId },
   });
@@ -51,10 +45,9 @@ export const saveHeartbeat = async (
   }
 
   if (attempt.status === "COMPLETED") {
-    throw new Error("Exam already submitted.");
+    return { lastHeartbeat: new Date() };
   }
 
-  // 2. Update Attempt Metadata
   await prisma.mockTestAttempt.update({
     where: { id: attemptId },
     data: {
@@ -64,11 +57,9 @@ export const saveHeartbeat = async (
     },
   });
 
-  // 3. Upsert Answers (Create if new, Update if changed)
   if (answers && answers.length > 0) {
     const ops = answers
       .map((ans) => {
-        // Only process if an option is selected
         if (ans.selectedOption === null || ans.selectedOption === undefined)
           return null;
 
@@ -84,7 +75,7 @@ export const saveHeartbeat = async (
             questionId: ans.questionId,
             selectedOption: ans.selectedOption,
             timeTaken: ans.timeTaken || 0,
-            isCorrect: false, // We calculate this at the end to save performance during sync
+            isCorrect: false,
           },
           update: {
             selectedOption: ans.selectedOption,
@@ -92,7 +83,7 @@ export const saveHeartbeat = async (
           },
         });
       })
-      .filter((op) => op !== null); // Filter out nulls
+      .filter((op) => op !== null);
 
     if (ops.length > 0) {
       await prisma.$transaction(ops);
@@ -104,155 +95,159 @@ export const saveHeartbeat = async (
 
 /**
  * Step 3: Final Submission & Analytics
- * Calculates Score, Percentile, and Topic Analysis
- * RETURNS: Full Attempt Object with Questions & Answers for Review
  */
-export const finalizeExam = async (attemptId, userId, finalAnswers, totalTime, warningCount) => {
-  
-  // A. Save any final pending answers first
+export const finalizeExam = async (
+  attemptId,
+  userId,
+  finalAnswers,
+  totalTime,
+  warningCount
+) => {
   await saveHeartbeat(attemptId, userId, finalAnswers, totalTime, warningCount);
 
-  // B. Fetch Full Exam Context for Calculation
   const attempt = await prisma.mockTestAttempt.findUnique({
     where: { id: attemptId },
     include: {
-        mockTest: {
+      mockTest: {
+        include: {
+          questions: {
             include: {
-                questions: {
-                    include: {
-                        question: { include: { topic: true } }
-                    }
-                }
-            }
+              question: { include: { topic: true } },
+            },
+          },
         },
-        answers: true 
-    }
+      },
+      answers: true,
+    },
   });
 
   if (!attempt) throw new Error("Attempt not found");
-  if (attempt.status === 'COMPLETED') {
-      // If already completed, return the full details again (Idempotency)
-      return await prisma.mockTestAttempt.findUnique({
-          where: { id: attemptId },
+
+  // Idempotency: Return full structure if already done
+  if (attempt.status === "COMPLETED") {
+    return await prisma.mockTestAttempt.findUnique({
+      where: { id: attemptId },
+      include: {
+        mockTest: {
           include: {
-              mockTest: { include: { questions: { include: { question: true }, orderBy: { questionId: 'asc' } } } },
-              answers: { orderBy: { questionId: 'asc' } }
-          }
-      });
+            questions: {
+              include: { question: true },
+              orderBy: { id: "asc" }, // FIX: Changed from orderIndex to id
+            },
+          },
+        },
+        answers: { orderBy: { questionId: "asc" } },
+      },
+    });
   }
 
   const mock = attempt.mockTest;
-  const userAnswersMap = new Map(attempt.answers.map(a => [a.questionId, a]));
+  const userAnswersMap = new Map(attempt.answers.map((a) => [a.questionId, a]));
 
-  // C. Calculate Score
   let score = 0;
   let correct = 0;
   let wrong = 0;
   let skipped = 0;
-  const topicStats = {}; 
+  const topicStats = {};
 
-  // Iterate over questions
   for (const mockQ of mock.questions) {
-      const qId = mockQ.questionId;
-      const qTopic = mockQ.question.topic?.name || "General";
-      
-      if (!topicStats[qTopic]) topicStats[qTopic] = { total: 0, correct: 0 };
-      topicStats[qTopic].total++;
+    const qId = mockQ.questionId;
+    const qTopic = mockQ.question.topic?.name || "General";
 
-      const userAns = userAnswersMap.get(qId);
+    if (!topicStats[qTopic]) topicStats[qTopic] = { total: 0, correct: 0 };
+    topicStats[qTopic].total++;
 
-      // Handle Skips
-      if (!userAns || userAns.selectedOption === null || userAns.selectedOption === undefined) {
-          skipped++;
-          continue;
-      }
+    const userAns = userAnswersMap.get(qId);
 
-      const isCorrect = userAns.selectedOption === mockQ.question.correctIndex;
-      
-      // Mark answer as correct/incorrect in DB
-      await prisma.mockTestAnswer.update({
-          where: { id: userAns.id },
-          data: { isCorrect }
-      });
+    if (
+      !userAns ||
+      userAns.selectedOption === null ||
+      userAns.selectedOption === undefined
+    ) {
+      skipped++;
+      continue;
+    }
 
-      if (isCorrect) {
-          score += mockQ.marks;
-          correct++;
-          topicStats[qTopic].correct++;
-      } else {
-          score -= mockQ.negative;
-          wrong++;
-      }
+    const isCorrect = userAns.selectedOption === mockQ.question.correctIndex;
+
+    await prisma.mockTestAnswer.update({
+      where: { id: userAns.id },
+      data: { isCorrect },
+    });
+
+    if (isCorrect) {
+      score += mockQ.marks;
+      correct++;
+      topicStats[qTopic].correct++;
+    } else {
+      score -= mockQ.negative;
+      wrong++;
+    }
   }
 
-  // D. Calculate Percentile
   const totalAttempts = await prisma.mockTestAttempt.count({
-      where: { mockTestId: mock.id, status: 'COMPLETED' }
+    where: { mockTestId: mock.id, status: "COMPLETED" },
   });
-  
+
   const attemptsBelow = await prisma.mockTestAttempt.count({
-      where: { 
-          mockTestId: mock.id, 
-          status: 'COMPLETED',
-          score: { lt: score }
-      }
+    where: {
+      mockTestId: mock.id,
+      status: "COMPLETED",
+      score: { lt: score },
+    },
   });
 
-  const percentile = totalAttempts > 0 
-      ? parseFloat(((attemptsBelow / totalAttempts) * 100).toFixed(2)) 
-      : 100.00;
+  const percentile =
+    totalAttempts > 0
+      ? parseFloat(((attemptsBelow / totalAttempts) * 100).toFixed(2))
+      : 100.0;
 
-  // E. Format Topic Analysis
   const topicHeatmap = {};
   for (const [topic, stats] of Object.entries(topicStats)) {
-      topicHeatmap[topic] = stats.total > 0 
-          ? Math.round((stats.correct / stats.total) * 100) 
-          : 0;
+    topicHeatmap[topic] =
+      stats.total > 0 ? Math.round((stats.correct / stats.total) * 100) : 0;
   }
 
-  // F. Generate AI Feedback
   const weakTopics = Object.entries(topicHeatmap)
-      .filter(([_, pct]) => pct < 50)
-      .map(([topic]) => topic);
+    .filter(([_, pct]) => pct < 50)
+    .map(([topic]) => topic);
 
   const aiAnalysis = await aiService.generateExamAnalysis(
-      score,
-      mock.totalMarks,
-      weakTopics,
-      attempt.timeTaken
+    score,
+    mock.totalMarks,
+    weakTopics,
+    attempt.timeTaken
   );
 
-  // G. Final Database Update & RETURN FULL DATA FOR REVIEW
   const finalResult = await prisma.mockTestAttempt.update({
-      where: { id: attemptId },
-      data: {
-          status: 'COMPLETED',
-          submittedAt: new Date(),
-          score,
-          correctCount: correct,
-          wrongCount: wrong,
-          skippedCount: skipped,
-          percentile,
-          topicAnalysis: topicHeatmap,
-          analysisJson: aiAnalysis || {},
-          aiFeedback: aiAnalysis?.summary || "Well done!"
-      },
-      // --- CRITICAL ADDITION FOR REVIEW PAGE ---
-      include: {
-          mockTest: {
-              include: {
-                  questions: {
-                      include: {
-                          question: true // Fetches text, options, explanation
-                      },
-                      orderBy: { orderIndex: 'asc' } // Ensure correct order
-                  }
-              }
+    where: { id: attemptId },
+    data: {
+      status: "COMPLETED",
+      submittedAt: new Date(),
+      score,
+      correctCount: correct,
+      wrongCount: wrong,
+      skippedCount: skipped,
+      percentile,
+      topicAnalysis: topicHeatmap,
+      analysisJson: aiAnalysis || {},
+      aiFeedback: aiAnalysis?.summary || "Well done!",
+    },
+    include: {
+      mockTest: {
+        include: {
+          questions: {
+            include: {
+              question: true,
+            },
+            orderBy: { id: "asc" }, // FIX: Changed from orderIndex to id
           },
-          answers: {
-            orderBy: { questionId: 'asc' }
-          }
-      }
+        },
+      },
+      answers: {
+        orderBy: { questionId: "asc" },
+      },
+    },
   });
 
   return finalResult;
@@ -268,15 +263,12 @@ export const processPreviousYearPaper = async (
   year,
   sourceName
 ) => {
-  // 1. AI Extraction
   const extractedQuestions = await aiService.parseQuestionsFromText(
     textData,
     sourceName
   );
 
-  // 2. Store in DB using a Transaction
   const createdCount = await prisma.$transaction(async (tx) => {
-    // Fetch Course Structure
     const course = await tx.course.findUnique({
       where: { id: parseInt(courseId) },
       include: {
@@ -347,7 +339,13 @@ export const processPreviousYearPaper = async (
 /**
  * Enhanced Mock Generator with 'useAI' flag support
  */
-export const generateMockExam = async (courseId, title, useAI = false) => {
+export const generateMockExam = async (
+  courseId,
+  title,
+  useAI = false,
+  examType = "FULL_MOCK",
+  subjectId = null
+) => {
   const course = await prisma.course.findUnique({
     where: { id: parseInt(courseId) },
     include: {
@@ -359,29 +357,38 @@ export const generateMockExam = async (courseId, title, useAI = false) => {
     throw new Error("Course or Syllabus missing.");
   }
 
+  // --- FILTER FOR SECTIONAL EXAMS ---
+  let targetSubjects = course.subjects;
+  if (examType === "SECTIONAL" && subjectId) {
+    targetSubjects = course.subjects.filter(
+      (s) => s.subjectId === parseInt(subjectId)
+    );
+    if (targetSubjects.length === 0)
+      throw new Error("Selected subject not in syllabus.");
+  }
+
   const mockTest = await prisma.mockTest.create({
     data: {
-      title: title || `${course.name} - ${useAI ? "AI Generated" : "Standard"}`,
+      title: title,
       courseId: course.id,
-      durationMin: 60,
+      examType: examType,
+      subjectId: subjectId ? parseInt(subjectId) : null,
+      durationMin: examType === "SECTIONAL" ? 30 : 60, // Default duration logic
       totalMarks: 0,
       isLive: false,
     },
   });
 
-  const subjectProcessingPromises = course.subjects.map(async (config) => {
+  const subjectProcessingPromises = targetSubjects.map(async (config) => {
     const subjectName = config.subject.name;
     const countNeeded = config.questionCount;
     let questionsToAdd = [];
 
-    // Strategy: Current Affairs always AI, others depends on useAI flag
     const isCurrentAffairs = subjectName
       .toLowerCase()
       .includes("current affairs");
 
     if (isCurrentAffairs) {
-      // ... (Keep existing CA logic) ...
-      // Placeholder for CA logic from previous context
       const generatedQs = await aiService.generateQuestionsFromSyllabus(
         course.name,
         "Current Affairs",
@@ -395,7 +402,7 @@ export const generateMockExam = async (courseId, title, useAI = false) => {
             options: gq.options,
             correctIndex: gq.correctIndex,
             explanation: gq.explanation,
-            topicId: config.subjectId,
+            topicId: config.subjectId, // Fallback to subject ID as topic
             difficulty: "MEDIUM",
           },
         })
@@ -417,6 +424,7 @@ export const generateMockExam = async (courseId, title, useAI = false) => {
           deficit
         );
 
+        // Find a valid topic ID
         const targetTopicId = config.subject.topics[0]?.id || config.subjectId;
 
         const savePromises = generatedQs.map((gq) =>
@@ -473,6 +481,7 @@ export const getMockTestsForCourse = async (courseId) => {
     select: {
       id: true,
       title: true,
+      examType: true, // IMPORTANT: Return this so frontend can filter
       durationMin: true,
       totalMarks: true,
       _count: { select: { questions: true } },
@@ -496,7 +505,7 @@ export const getMockTestById = async (id) => {
             },
           },
         },
-        orderBy: { questionId: "asc" },
+        orderBy: { id: "asc" }, // Consistent ordering
       },
     },
   });

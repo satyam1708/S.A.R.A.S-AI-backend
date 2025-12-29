@@ -2,13 +2,13 @@
 // learn more about it in the docs: https://pris.ly/d/prisma-schema
 
 generator client {
-  provider = "prisma-client-js"
+  provider        = "prisma-client-js"
   previewFeatures = ["postgresqlExtensions"]
 }
 
 datasource db {
-  provider = "postgresql"
-  url      = env("DATABASE_URL")
+  provider   = "postgresql"
+  url        = env("DATABASE_URL")
   extensions = [vector]
 }
 
@@ -17,14 +17,14 @@ datasource db {
 // ===========================================
 
 model User {
-  id                Int      @id @default(autoincrement())
-  name              String
-  email             String   @unique
-  password          String
-  role              String   @default("USER") // "USER", "ADMIN"
+  id       Int    @id @default(autoincrement())
+  name     String
+  email    String @unique
+  password String
+  role     String @default("USER") // "USER", "ADMIN"
 
-  selectedCourseId  Int?
-  selectedCourse    Course?  @relation(fields: [selectedCourseId], references: [id])
+  selectedCourseId Int?
+  selectedCourse   Course? @relation(fields: [selectedCourseId], references: [id])
 
   bookmarks         Bookmark[]
   chatSessions      ChatSession[]
@@ -33,7 +33,7 @@ model User {
   flashcardStudies  UserFlashcardStudy[]
   mockTestAttempts  MockTestAttempt[]
 
-  createdAt         DateTime @default(now())
+  createdAt DateTime @default(now())
 }
 
 model Bookmark {
@@ -59,24 +59,25 @@ model Course {
   id          Int             @id @default(autoincrement())
   name        String          @unique
   description String?
-  subjects    CourseSubject[] 
+  subjects    CourseSubject[]
   mockTests   MockTest[]
   users       User[]
 }
 
 model Subject {
-  id            Int             @id @default(autoincrement())
-  name          String          @unique
-  chapters      Chapter[]
-  topics        Topic[]
-  courseConfigs CourseSubject[] 
+  id             Int             @id @default(autoincrement())
+  name           String          @unique
+  chapters       Chapter[]
+  topics         Topic[]
+  courseConfigs  CourseSubject[]
+  sectionalTests MockTest[]
 }
 
 model Chapter {
-  id        Int      @id @default(autoincrement())
+  id        Int     @id @default(autoincrement())
   name      String
   subjectId Int
-  subject   Subject  @relation(fields: [subjectId], references: [id], onDelete: Cascade)
+  subject   Subject @relation(fields: [subjectId], references: [id], onDelete: Cascade)
   topics    Topic[]
 
   @@unique([subjectId, name])
@@ -84,34 +85,37 @@ model Chapter {
 }
 
 model CourseSubject {
-  id            Int     @id @default(autoincrement())
-  courseId      Int
-  course        Course  @relation(fields: [courseId], references: [id], onDelete: Cascade)
-  subjectId     Int
-  subject       Subject @relation(fields: [subjectId], references: [id], onDelete: Cascade)
-  
-  questionCount Int     
-  marksPerQ     Float   @default(1.0) 
-  negativeMarks Float   @default(0.0) 
-  orderIndex    Int     @default(1)   
+  id        Int     @id @default(autoincrement())
+  courseId  Int
+  course    Course  @relation(fields: [courseId], references: [id], onDelete: Cascade)
+  subjectId Int
+  subject   Subject @relation(fields: [subjectId], references: [id], onDelete: Cascade)
+
+  questionCount Int
+  marksPerQ     Float @default(1.0)
+  negativeMarks Float @default(0.0)
+  orderIndex    Int   @default(1)
+
+  // NEW: Store difficulty distribution (e.g. { "EASY": 20, "MEDIUM": 50, "HARD": 30 })
+  difficultyConfig Json?
 
   @@unique([courseId, subjectId])
-  @@index([courseId]) // Performance Index
-  @@index([subjectId]) // Performance Index
+  @@index([courseId])
+  @@index([subjectId])
 }
 
 model Topic {
-  id           Int               @id @default(autoincrement())
-  name         String
-  subjectId    Int
-  subject      Subject           @relation(fields: [subjectId], references: [id], onDelete: Cascade)
-  chapterId    Int?
-  chapter      Chapter?          @relation(fields: [chapterId], references: [id], onDelete: Cascade)
-  
+  id        Int      @id @default(autoincrement())
+  name      String
+  subjectId Int
+  subject   Subject  @relation(fields: [subjectId], references: [id], onDelete: Cascade)
+  chapterId Int?
+  chapter   Chapter? @relation(fields: [chapterId], references: [id], onDelete: Cascade)
+
   content      ContentBlock[]
   learnedBy    LearningHistory[]
   chatSessions ChatSession[]
-  quizzes      Quiz[] 
+  quizzes      Quiz[]
   flashcards   Flashcard[]
   questions    QuestionBank[]
 
@@ -120,12 +124,12 @@ model Topic {
 }
 
 model ContentBlock {
-  id        Int    @id @default(autoincrement())
-  content   String @db.Text
-  topicId   Int
-  topic     Topic  @relation(fields: [topicId], references: [id], onDelete: Cascade)
-  source    String?
-  vector    Unsupported("vector(1536)")?
+  id      Int                          @id @default(autoincrement())
+  content String                       @db.Text
+  topicId Int
+  topic   Topic                        @relation(fields: [topicId], references: [id], onDelete: Cascade)
+  source  String?
+  vector  Unsupported("vector(1536)")?
 
   @@index([topicId]) // Performance Index
 }
@@ -147,49 +151,55 @@ model LearningHistory {
 // ===========================================
 
 model QuestionBank {
-  id             Int      @id @default(autoincrement())
-  topicId        Int
-  topic          Topic    @relation(fields: [topicId], references: [id], onDelete: Cascade)
-  type           String   @default("MCQ") 
-  difficulty     String   @default("MEDIUM") 
-  questionText   String   @db.Text
-  options        Json     
-  correctIndex   Int      
-  explanation    String?  @db.Text 
-  
-  usedInMocks    MockTestQuestion[]
-  mockAnswers    MockTestAnswer[]
-  createdAt      DateTime @default(now())
+  id           Int     @id @default(autoincrement())
+  topicId      Int
+  topic        Topic   @relation(fields: [topicId], references: [id], onDelete: Cascade)
+  type         String  @default("MCQ")
+  difficulty   String  @default("MEDIUM")
+  questionText String  @db.Text
+  options      Json
+  correctIndex Int
+  explanation  String? @db.Text
+
+  usedInMocks MockTestQuestion[]
+  mockAnswers MockTestAnswer[]
+  createdAt   DateTime           @default(now())
 
   @@index([topicId]) // Performance Index
 }
 
 model MockTest {
-  id          Int      @id @default(autoincrement())
-  title       String   
-  courseId    Int
-  course      Course   @relation(fields: [courseId], references: [id], onDelete: Cascade)
-  durationMin Int      @default(60) 
-  totalMarks  Int
-  isLive      Boolean  @default(false) 
-  
-  questions   MockTestQuestion[]
-  attempts    MockTestAttempt[]
-  createdAt   DateTime @default(now())
+  id       Int    @id @default(autoincrement())
+  title    String
+  courseId Int
+  course   Course @relation(fields: [courseId], references: [id], onDelete: Cascade)
 
-  @@index([courseId]) // Performance Index
+  // NEW: Support Sectional Tests
+  examType  String   @default("FULL_MOCK") // "FULL_MOCK", "SECTIONAL"
+  subjectId Int? // If SECTIONAL, which subject?
+  subject   Subject? @relation(fields: [subjectId], references: [id]) // Relations automatically link to 'sectionalTests' on Subject
+
+  durationMin Int     @default(60)
+  totalMarks  Float
+  isLive      Boolean @default(false)
+
+  questions MockTestQuestion[]
+  attempts  MockTestAttempt[]
+  createdAt DateTime           @default(now())
+
+  @@index([courseId])
 }
 
 model MockTestQuestion {
-  id          Int          @id @default(autoincrement())
-  mockTestId  Int
-  mockTest    MockTest     @relation(fields: [mockTestId], references: [id], onDelete: Cascade)
-  questionId  Int
-  question    QuestionBank @relation(fields: [questionId], references: [id], onDelete: Cascade)
-  marks       Float
-  negative    Float
-  
-  @@index([mockTestId]) 
+  id         Int          @id @default(autoincrement())
+  mockTestId Int
+  mockTest   MockTest     @relation(fields: [mockTestId], references: [id], onDelete: Cascade)
+  questionId Int
+  question   QuestionBank @relation(fields: [questionId], references: [id], onDelete: Cascade)
+  marks      Float
+  negative   Float
+
+  @@index([mockTestId])
   @@index([questionId]) // Performance Index
 }
 
@@ -198,51 +208,50 @@ model MockTestQuestion {
 // ===========================================
 
 model MockTestAttempt {
-  id            Int      @id @default(autoincrement())
-  userId        Int
-  user          User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  mockTestId    Int
-  mockTest      MockTest @relation(fields: [mockTestId], references: [id], onDelete: Cascade)
-  
-  score         Float    @default(0) // Default to 0 initially
-  timeTaken     Int      @default(0) // Track cumulative time
-  correctCount  Int      @default(0)
-  wrongCount    Int      @default(0)
-  skippedCount  Int      @default(0)
-  warningCount  Int      @default(0)
-  
+  id         Int      @id @default(autoincrement())
+  userId     Int
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  mockTestId Int
+  mockTest   MockTest @relation(fields: [mockTestId], references: [id], onDelete: Cascade)
+
+  score        Float @default(0) // Default to 0 initially
+  timeTaken    Int   @default(0) // Track cumulative time
+  correctCount Int   @default(0)
+  wrongCount   Int   @default(0)
+  skippedCount Int   @default(0)
+  warningCount Int   @default(0)
+
   // --- NEW FIELDS FOR RELIABILITY & ANALYTICS ---
   status        String   @default("IN_PROGRESS") // "IN_PROGRESS", "COMPLETED", "ABANDONED"
-  lastHeartbeat DateTime @default(now())         // To track when they last synced
-  percentile    Float?                           // Store calculated percentile here
-  topicAnalysis Json?                            // Store { "History": 80, "Math": 40 } map
+  lastHeartbeat DateTime @default(now()) // To track when they last synced
+  percentile    Float? // Store calculated percentile here
+  topicAnalysis Json? // Store { "History": 80, "Math": 40 } map
   // ----------------------------------------------
 
-  analysisJson  Json?    
-  aiFeedback    String?  @db.Text 
-  submittedAt   DateTime? // Make optional, set only on final submit
-  createdAt     DateTime  @default(now()) // Track start time
-  
-  answers       MockTestAnswer[]
+  analysisJson Json?
+  aiFeedback   String?   @db.Text
+  submittedAt  DateTime? // Make optional, set only on final submit
+  createdAt    DateTime  @default(now()) // Track start time
+
+  answers MockTestAnswer[]
 
   @@index([userId])
   @@index([mockTestId])
 }
 
 model MockTestAnswer {
-  id             Int             @id @default(autoincrement())
-  attemptId      Int
-  attempt        MockTestAttempt @relation(fields: [attemptId], references: [id], onDelete: Cascade)
-  questionId     Int
-  question       QuestionBank    @relation(fields: [questionId], references: [id], onDelete: Cascade)
-  
-  selectedOption Int?            
-  isCorrect      Boolean         @default(false) // Default false until checked
-  timeTaken      Int?            @default(0)
+  id         Int             @id @default(autoincrement())
+  attemptId  Int
+  attempt    MockTestAttempt @relation(fields: [attemptId], references: [id], onDelete: Cascade)
+  questionId Int
+  question   QuestionBank    @relation(fields: [questionId], references: [id], onDelete: Cascade)
+
+  selectedOption Int?
+  isCorrect      Boolean @default(false) // Default false until checked
+  timeTaken      Int?    @default(0)
 
   // Add unique constraint so we can update answers easily during the exam
-  @@unique([attemptId, questionId]) 
-  
+  @@unique([attemptId, questionId])
   @@index([attemptId])
   @@index([questionId])
 }
@@ -267,7 +276,7 @@ model ChatMessage {
   id        Int         @id @default(autoincrement())
   session   ChatSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
   sessionId Int
-  role      String 
+  role      String
   content   String      @db.Text
   imageUrl  String?
   createdAt DateTime    @default(now())
@@ -280,7 +289,7 @@ model CachedBroadcast {
   category  String
   language  String
   script    String   @db.Text
-  articles  Json 
+  articles  Json
   updatedAt DateTime @updatedAt
 
   @@unique([category, language])
@@ -293,7 +302,7 @@ model Quiz {
   questions Question[]
   attempts  UserQuizAttempt[]
   createdAt DateTime          @default(now())
-  
+
   @@index([topicId])
 }
 
@@ -302,8 +311,8 @@ model Question {
   quiz               Quiz         @relation(fields: [quizId], references: [id], onDelete: Cascade)
   quizId             Int
   questionText       String
-  options            Json 
-  correctAnswerIndex Int 
+  options            Json
+  correctAnswerIndex Int
   answers            UserAnswer[]
 
   @@index([quizId])
@@ -315,10 +324,10 @@ model UserQuizAttempt {
   userId      Int
   quiz        Quiz         @relation(fields: [quizId], references: [id], onDelete: Cascade)
   quizId      Int
-  score       Int 
-  total       Int 
+  score       Int
+  total       Int
   completedAt DateTime     @default(now())
-  answers     UserAnswer[] 
+  answers     UserAnswer[]
 
   @@index([userId])
   @@index([quizId])
@@ -330,7 +339,7 @@ model UserAnswer {
   attemptId           Int
   question            Question        @relation(fields: [questionId], references: [id], onDelete: Cascade)
   questionId          Int
-  selectedAnswerIndex Int 
+  selectedAnswerIndex Int
   isCorrect           Boolean
 
   @@index([attemptId])
@@ -365,7 +374,7 @@ model UserFlashcardStudy {
 
 model EnglishDose {
   id        Int      @id @default(autoincrement())
-  date      DateTime @unique @db.Date 
-  content   Json     
+  date      DateTime @unique @db.Date
+  content   Json
   createdAt DateTime @default(now())
 }
