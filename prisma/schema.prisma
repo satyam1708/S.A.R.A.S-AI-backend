@@ -204,19 +204,29 @@ model MockTestAttempt {
   mockTestId    Int
   mockTest      MockTest @relation(fields: [mockTestId], references: [id], onDelete: Cascade)
   
-  score         Float
-  timeTaken     Int      
-  correctCount  Int
-  wrongCount    Int
+  score         Float    @default(0) // Default to 0 initially
+  timeTaken     Int      @default(0) // Track cumulative time
+  correctCount  Int      @default(0)
+  wrongCount    Int      @default(0)
+  skippedCount  Int      @default(0)
   warningCount  Int      @default(0)
-  skippedCount  Int
+  
+  // --- NEW FIELDS FOR RELIABILITY & ANALYTICS ---
+  status        String   @default("IN_PROGRESS") // "IN_PROGRESS", "COMPLETED", "ABANDONED"
+  lastHeartbeat DateTime @default(now())         // To track when they last synced
+  percentile    Float?                           // Store calculated percentile here
+  topicAnalysis Json?                            // Store { "History": 80, "Math": 40 } map
+  // ----------------------------------------------
+
   analysisJson  Json?    
   aiFeedback    String?  @db.Text 
-  submittedAt   DateTime @default(now())
+  submittedAt   DateTime? // Make optional, set only on final submit
+  createdAt     DateTime  @default(now()) // Track start time
+  
   answers       MockTestAnswer[]
 
-  @@index([userId]) // Performance Index
-  @@index([mockTestId]) // Performance Index
+  @@index([userId])
+  @@index([mockTestId])
 }
 
 model MockTestAnswer {
@@ -227,11 +237,14 @@ model MockTestAnswer {
   question       QuestionBank    @relation(fields: [questionId], references: [id], onDelete: Cascade)
   
   selectedOption Int?            
-  isCorrect      Boolean
-  timeTaken      Int?            
+  isCorrect      Boolean         @default(false) // Default false until checked
+  timeTaken      Int?            @default(0)
 
-  @@index([attemptId]) // Performance Index
-  @@index([questionId]) // Performance Index
+  // Add unique constraint so we can update answers easily during the exam
+  @@unique([attemptId, questionId]) 
+  
+  @@index([attemptId])
+  @@index([questionId])
 }
 
 // ===========================================

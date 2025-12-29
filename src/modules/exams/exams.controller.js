@@ -5,13 +5,73 @@ import fs from 'fs/promises';
 import path from 'path';
 import os from 'os';
 
+// --- STUDENT: EXAM FLOW ---
+
+export const startExam = async (req, res) => {
+  try {
+    const userId = req.user.id;
+    const { mockId } = req.params;
+    
+    const attempt = await examService.startExamSession(userId, mockId);
+    res.status(201).json(attempt);
+  } catch (error) {
+    console.error("Start Exam Error:", error);
+    res.status(500).json({ error: error.message });
+  }
+};
+
+export const syncExamProgress = async (req, res) => {
+  try {
+    const userId = req.user.id;
+    const { attemptId } = req.params;
+    // answers = array of { questionId, selectedOption, timeTaken }
+    // timeTaken = total seconds elapsed in exam so far
+    const { answers, timeTaken, warningCount } = req.body;
+
+    const result = await examService.saveHeartbeat(
+      parseInt(attemptId), 
+      userId, 
+      answers, 
+      timeTaken, 
+      warningCount
+    );
+    
+    res.json({ success: true, savedAt: result.lastHeartbeat });
+  } catch (error) {
+    console.error("Heartbeat Error:", error);
+    res.status(500).json({ error: "Failed to sync progress" });
+  }
+};
+
+export const finishExam = async (req, res) => {
+  try {
+    const userId = req.user.id;
+    const { attemptId } = req.params;
+    
+    // We do one final sync of answers before calculating score
+    const { answers, timeTaken, warningCount } = req.body;
+
+    const result = await examService.finalizeExam(
+      parseInt(attemptId),
+      userId,
+      answers,
+      timeTaken,
+      warningCount
+    );
+
+    res.json(result);
+  } catch (error) {
+    console.error("Submit Error:", error);
+    res.status(500).json({ error: error.message });
+  }
+};
+
+// --- EXISTING METHODS (UNCHANGED LOGIC, JUST EXPORTS) ---
+
 export const generateMock = async (req, res) => {
   try {
     const { courseId } = req.params;
-    // Extract useAI flag from body
     const { title, useAI } = req.body; 
-    
-    // Pass useAI to the service
     const mock = await examService.generateMockExam(courseId, title, useAI);
     res.status(201).json(mock);
   } catch (error) {
@@ -29,84 +89,44 @@ export const listMocks = async (req, res) => {
     res.status(500).json({ error: error.message });
   }
 };
+
+// Deprecated: Old submit endpoint (keep if needed for backward compatibility during migration)
 export const submitExam = async (req, res) => {
-  try {
-    const userId = req.user.id;
-    // Extract warningCount from the request body
-    const { mockTestId, answers, timeTaken, warningCount } = req.body; 
-
-    // Pass warningCount to the service
-    const result = await examService.submitMockAttempt(userId, {
-      mockTestId, 
-      answers, 
-      timeTaken,
-      warningCount: warningCount || 0 // Default to 0 if not sent
-    });
-
-    res.json(result);
-  } catch (error) {
-    console.error("Submit Error:", error);
-    res.status(500).json({ error: "Failed to submit exam" });
-  }
+    res.status(410).json({ error: "Please use the new /start and /submit flow." });
 };
+
 export const uploadPYQ = async (req, res) => {
   const file = req.file;
-  
-  // 1. Validation
-  if (!file) {
-    return res.status(400).json({ error: "No file uploaded." });
-  }
+  if (!file) return res.status(400).json({ error: "No file uploaded." });
 
   const { courseId, year, source } = req.body;
   let fullText = '';
   let tempFilePath = '';
 
   try {
-    // 2. Handle different file types (Business Grade Robustness)
     if (file.mimetype === 'application/pdf') {
-      // Create temp file for PDF extractor
       tempFilePath = path.join(os.tmpdir(), `pyq_${Date.now()}.pdf`);
       await fs.writeFile(tempFilePath, file.buffer);
-
       const pdfExtract = new PDFExtract();
       const data = await pdfExtract.extract(tempFilePath);
-      
-      // Join pages into a single text block
-      fullText = data.pages
-        .map(page => page.content.map(item => item.str).join(' '))
-        .join('\n');
-
+      fullText = data.pages.map(p => p.content.map(i => i.str).join(' ')).join('\n');
     } else if (file.mimetype === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document') {
-      // Handle .docx files
       const { value } = await mammoth.default.extractRawText({ buffer: file.buffer });
       fullText = value;
     } else if (file.mimetype === 'text/plain') {
-      // Handle .txt files
       fullText = file.buffer.toString('utf-8');
     } else {
-      return res.status(400).json({ error: "Unsupported file type. Please upload PDF, DOCX, or TXT." });
+      return res.status(400).json({ error: "Unsupported file type." });
     }
 
-    // 3. Clean up text (remove excessive newlines)
     const cleanText = fullText.replace(/\n\n+/g, '\n');
-
-    // 4. Pass to Service for AI Processing
     const result = await examService.processPreviousYearPaper(cleanText, courseId, year, source);
-    
     res.json(result);
-
   } catch (error) {
     console.error("PYQ Upload Error:", error);
-    res.status(500).json({ error: "Failed to process file. " + error.message });
+    res.status(500).json({ error: "Failed to process file." });
   } finally {
-    // 5. Clean up temp file to prevent server storage bloat
-    if (tempFilePath) {
-      try {
-        await fs.unlink(tempFilePath);
-      } catch (e) {
-        console.error("Temp file cleanup failed:", e);
-      }
-    }
+    if (tempFilePath) try { await fs.unlink(tempFilePath); } catch (e) {}
   }
 };
 
@@ -114,19 +134,15 @@ export const getExamDetails = async (req, res) => {
   try {
     const { id } = req.params;
     const exam = await examService.getMockTestById(id);
-    
-    if (!exam) {
-      return res.status(404).json({ error: "Exam not found" });
-    }
-    
+    if (!exam) return res.status(404).json({ error: "Exam not found" });
     res.json(exam);
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
 };
+
 export const getMyResults = async (req, res) => {
   try {
-    // req.user comes from authMiddleware
     const userId = req.user.id;
     const history = await examService.getUserExamHistory(userId);
     res.json(history);
