@@ -13,20 +13,20 @@ const router = express.Router();
 // 1. List available mocks
 router.get('/', authMiddleware, examController.listMocks);
 
-// 2. Get Exam Instructions/Details
+// 2. Get History (MOVED UP - Must be before /:id)
+router.get('/history/my-results', authMiddleware, examController.getMyResults);
+
+// 3. Get Exam Instructions/Details (Wildcard route comes last for GETs)
 router.get('/:id', authMiddleware, examController.getExamDetails);
 
-// 3. START EXAM (New - Creates the 'IN_PROGRESS' attempt)
+// 4. START EXAM
 router.post('/start/:mockId', authMiddleware, examController.startExam);
 
-// 4. SYNC HEARTBEAT (New - Saves answers periodically during exam)
+// 5. SYNC HEARTBEAT
 router.post('/attempt/:attemptId/sync', authMiddleware, examController.syncExamProgress);
 
-// 5. SUBMIT EXAM (Updated - Finalizes the attempt)
+// 6. SUBMIT EXAM
 router.post('/attempt/:attemptId/submit', authMiddleware, examController.finishExam);
-
-// 6. Get History
-router.get('/history/my-results', authMiddleware, examController.getMyResults);
 
 
 // ==========================================
