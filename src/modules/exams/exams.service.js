@@ -6,9 +6,32 @@ import * as aiService from "../../services/aiService.js";
 // =========================================================
 
 /**
- * Step 1: Initialize the Exam
+ * Step 1: Initialize OR Resume the Exam
+ * FIX: Prevents restart on page refresh/back button by checking for existing attempts.
  */
 export const startExamSession = async (userId, mockTestId) => {
+  // 1. Check if the user has an existing attempt for this exam
+  const existingAttempt = await prisma.mockTestAttempt.findFirst({
+    where: {
+      userId: parseInt(userId),
+      mockTestId: parseInt(mockTestId),
+    },
+    orderBy: { createdAt: "desc" }, // Always get the latest attempt
+  });
+
+  if (existingAttempt) {
+    // A. If the exam is already COMPLETED, return it.
+    // The Frontend must check 'status' === 'COMPLETED' and redirect to /analysis.
+    if (existingAttempt.status === "COMPLETED") {
+      return existingAttempt;
+    }
+
+    // B. If the exam is IN_PROGRESS, return it.
+    // The Frontend will use 'timeTaken' and 'answers' to resume the state.
+    return existingAttempt;
+  }
+
+  // 2. Only create a NEW session if no previous attempt exists
   const attempt = await prisma.mockTestAttempt.create({
     data: {
       userId: parseInt(userId),
@@ -28,6 +51,7 @@ export const startExamSession = async (userId, mockTestId) => {
 
 /**
  * Step 2: Periodic Heartbeat
+ * Syncs progress without overwriting if exam is finished.
  */
 export const saveHeartbeat = async (
   attemptId,
@@ -44,19 +68,22 @@ export const saveHeartbeat = async (
     throw new Error("Invalid attempt session.");
   }
 
+  // Prevent updates if exam is already submitted
   if (attempt.status === "COMPLETED") {
-    return { lastHeartbeat: new Date() };
+    return { lastHeartbeat: new Date(), status: "COMPLETED" };
   }
 
+  // Update session metadata
   await prisma.mockTestAttempt.update({
     where: { id: attemptId },
     data: {
-      timeTaken: timeTaken || attempt.timeTaken,
-      warningCount: warningCount || attempt.warningCount,
+      timeTaken: timeTaken !== undefined ? timeTaken : attempt.timeTaken,
+      warningCount: warningCount !== undefined ? warningCount : attempt.warningCount,
       lastHeartbeat: new Date(),
     },
   });
 
+  // Bulk Upsert Answers (Efficient)
   if (answers && answers.length > 0) {
     const ops = answers
       .map((ans) => {
@@ -90,11 +117,12 @@ export const saveHeartbeat = async (
     }
   }
 
-  return { lastHeartbeat: new Date() };
+  return { lastHeartbeat: new Date(), status: "IN_PROGRESS" };
 };
 
 /**
  * Step 3: Final Submission & Analytics
+ * Handles scoring, percentile calculation, and AI Analysis.
  */
 export const finalizeExam = async (
   attemptId,
@@ -103,8 +131,10 @@ export const finalizeExam = async (
   totalTime,
   warningCount
 ) => {
+  // 1. Save final state first
   await saveHeartbeat(attemptId, userId, finalAnswers, totalTime, warningCount);
 
+  // 2. Fetch full attempt with Question details for scoring
   const attempt = await prisma.mockTestAttempt.findUnique({
     where: { id: attemptId },
     include: {
@@ -123,7 +153,8 @@ export const finalizeExam = async (
 
   if (!attempt) throw new Error("Attempt not found");
 
-  // Idempotency: Return full structure if already done
+  // 3. IDEMPOTENCY CHECK: If already completed, return existing result.
+  // This prevents double submission errors if user clicks twice or refreshes.
   if (attempt.status === "COMPLETED") {
     return await prisma.mockTestAttempt.findUnique({
       where: { id: attemptId },
@@ -132,7 +163,7 @@ export const finalizeExam = async (
           include: {
             questions: {
               include: { question: true },
-              orderBy: { id: "asc" }, // FIX: Changed from orderIndex to id
+              orderBy: { id: "asc" },
             },
           },
         },
@@ -150,6 +181,7 @@ export const finalizeExam = async (
   let skipped = 0;
   const topicStats = {};
 
+  // 4. Calculate Score
   for (const mockQ of mock.questions) {
     const qId = mockQ.questionId;
     const qTopic = mockQ.question.topic?.name || "General";
@@ -170,6 +202,7 @@ export const finalizeExam = async (
 
     const isCorrect = userAns.selectedOption === mockQ.question.correctIndex;
 
+    // Mark answer as correct/incorrect in DB
     await prisma.mockTestAnswer.update({
       where: { id: userAns.id },
       data: { isCorrect },
@@ -185,6 +218,7 @@ export const finalizeExam = async (
     }
   }
 
+  // 5. Calculate Percentile
   const totalAttempts = await prisma.mockTestAttempt.count({
     where: { mockTestId: mock.id, status: "COMPLETED" },
   });
@@ -197,11 +231,14 @@ export const finalizeExam = async (
     },
   });
 
+  // (totalAttempts + 1) because the current attempt is about to be completed
+  const currentTotal = totalAttempts + 1;
   const percentile =
-    totalAttempts > 0
-      ? parseFloat(((attemptsBelow / totalAttempts) * 100).toFixed(2))
+    currentTotal > 1
+      ? parseFloat(((attemptsBelow / currentTotal) * 100).toFixed(2))
       : 100.0;
 
+  // 6. Generate Topic Analysis
   const topicHeatmap = {};
   for (const [topic, stats] of Object.entries(topicStats)) {
     topicHeatmap[topic] =
@@ -212,6 +249,7 @@ export const finalizeExam = async (
     .filter(([_, pct]) => pct < 50)
     .map(([topic]) => topic);
 
+  // 7. Generate AI Feedback (Async)
   const aiAnalysis = await aiService.generateExamAnalysis(
     score,
     mock.totalMarks,
@@ -219,6 +257,7 @@ export const finalizeExam = async (
     attempt.timeTaken
   );
 
+  // 8. Update Final Status
   const finalResult = await prisma.mockTestAttempt.update({
     where: { id: attemptId },
     data: {
@@ -237,10 +276,8 @@ export const finalizeExam = async (
       mockTest: {
         include: {
           questions: {
-            include: {
-              question: true,
-            },
-            orderBy: { id: "asc" }, // FIX: Changed from orderIndex to id
+            include: { question: true },
+            orderBy: { id: "asc" },
           },
         },
       },
@@ -252,6 +289,7 @@ export const finalizeExam = async (
 
   return finalResult;
 };
+
 
 // =========================================================
 // 2. CONTENT MANAGEMENT & GENERATION (Admin)
