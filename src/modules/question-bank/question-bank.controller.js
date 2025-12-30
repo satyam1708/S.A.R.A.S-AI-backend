@@ -2,11 +2,14 @@ import * as questionService from './question-bank.service.js';
 
 export const listQuestions = async (req, res) => {
   try {
-    const { page, limit, search, topicId, difficulty } = req.query;
+    //
+    const { page, limit, search, topicId, difficulty, mockTestId } = req.query;
+    
     const result = await questionService.getQuestions(page, limit, {
       search,
       topicId,
-      difficulty
+      difficulty,
+      mockTestId // Pass it to service
     });
     res.json(result);
   } catch (error) {
