@@ -1,3 +1,4 @@
+// src/modules/admin/admin.service.js
 import prisma from "../../lib/prisma.js";
 import {
   generateQuizFromContent,
