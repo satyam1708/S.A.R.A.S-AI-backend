@@ -1,12 +1,36 @@
 import { Router } from 'express';
-import { registerUser, loginUser, getProfile, selectCourse } from './auth.controller.js';
-import { authMiddleware } from '../../middleware/auth.middleware.js'; // We need to create this
+import * as authController from './auth.controller.js';
+import * as validators from './auth.validation.js';
+import { validate } from '../../middleware/validate.middleware.js';
+import { authMiddleware } from '../../middleware/auth.middleware.js';
 
 const router = Router();
 
-router.post('/register', registerUser);
-router.post('/login', loginUser);
-router.get('/profile', authMiddleware, getProfile);
-router.put('/select-course', authMiddleware, selectCourse);
+// Public Routes
+router.post(
+  '/register', 
+  validate(validators.registerSchema), 
+  authController.registerUser
+);
+
+router.post(
+  '/login', 
+  validate(validators.loginSchema), 
+  authController.loginUser
+);
+
+// Protected Routes
+router.get(
+  '/profile', 
+  authMiddleware, 
+  authController.getProfile
+);
+
+router.put(
+  '/select-course', 
+  authMiddleware, 
+  validate(validators.selectCourseSchema), 
+  authController.selectCourse
+);
 
 export default router;

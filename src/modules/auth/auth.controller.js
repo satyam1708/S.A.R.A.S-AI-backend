@@ -1,16 +1,17 @@
-// src/modules/auth/auth.controller.js
 import * as AuthService from './auth.service.js';
+import logger from '../../lib/logger.js';
 
 export const registerUser = async (req, res) => {
   try {
     const { name, email, password } = req.body;
-    if (!name || !email || !password) {
-      return res.status(400).json({ message: 'Name, email, and password are required' });
-    }
+    // Input is already validated by Zod middleware
+    
     const user = await AuthService.register(name, email, password);
-    res.status(201).json({ message: 'User registered', user });
+    
+    logger.info(`New user registered: ${email}`);
+    res.status(201).json({ message: 'User registered successfully', user });
   } catch (error) {
-    console.error('Register error:', error);
+    logger.error(`Register Failed: ${error.message}`);
     res.status(error.statusCode || 500).json({ message: error.message || 'Server error' });
   }
 };
@@ -18,13 +19,12 @@ export const registerUser = async (req, res) => {
 export const loginUser = async (req, res) => {
   try {
     const { email, password } = req.body;
-    if (!email || !password) {
-      return res.status(400).json({ message: 'Email and password are required' });
-    }
     const { token, user } = await AuthService.login(email, password);
+    
+    logger.info(`User logged in: ${email}`);
     res.json({ token, user });
   } catch (error) {
-    console.error('Login error:', error);
+    logger.warn(`Login Failed for ${req.body.email}: ${error.message}`);
     res.status(error.statusCode || 500).json({ message: error.message || 'Server error' });
   }
 };
@@ -34,20 +34,19 @@ export const getProfile = async (req, res) => {
     const user = await AuthService.getProfileById(req.user.id);
     res.json(user);
   } catch (error) {
-    console.error('Profile error:', error);
+    logger.error(`Profile Error [User:${req.user.id}]: ${error.message}`);
     res.status(error.statusCode || 500).json({ message: error.message || 'Server error' });
   }
 };
 
 export const selectCourse = async (req, res) => {
   try {
-    const userId = req.user.id; // Coming from auth middleware
+    const userId = req.user.id;
     const { courseId } = req.body;
 
-    if (!courseId) return res.status(400).json({ error: "Course ID is required" });
-
-    // FIX: Use AuthService (capital A), not authService
     const updatedUser = await AuthService.updateUserCourse(userId, courseId);
+    
+    logger.info(`User ${userId} selected course ${courseId}`);
     
     res.json({
       message: "Course goal updated successfully",
@@ -58,7 +57,7 @@ export const selectCourse = async (req, res) => {
       }
     });
   } catch (error) {
-    console.error("Select Course Error:", error);
+    logger.error(`Select Course Error [User:${req.user.id}]: ${error.message}`);
     res.status(500).json({ error: "Failed to update course selection" });
   }
 };
