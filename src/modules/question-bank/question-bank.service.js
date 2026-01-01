@@ -8,9 +8,9 @@ export const createQuestion = async (data) => {
     correctIndex, 
     difficulty, 
     explanation, 
-    mockTestId, // Optional: Link to a test immediately
-    marks = 1,  // Optional: Default marks if linking to test
-    negative = 0 // Optional: Default negative if linking to test
+    mockTestId, 
+    marks = 1,  
+    negative = 0 
   } = data;
 
   // 1. Create the base question
@@ -18,7 +18,7 @@ export const createQuestion = async (data) => {
     data: {
       topicId: parseInt(topicId),
       questionText,
-      options, // Assumes JSON array passed from frontend
+      options, // Validated as array by Zod
       correctIndex: parseInt(correctIndex),
       difficulty,
       explanation
@@ -40,10 +40,11 @@ export const createQuestion = async (data) => {
   return question;
 };
 
-// 1. Get Questions with Pagination & Filters
 export const getQuestions = async (page = 1, limit = 10, filters = {}) => {
-  const skip = (page - 1) * limit;
-  //
+  const p = parseInt(page) || 1;
+  const l = parseInt(limit) || 10;
+  const skip = (p - 1) * l;
+  
   const { search, topicId, difficulty, mockTestId } = filters;
 
   const where = {};
@@ -57,7 +58,6 @@ export const getQuestions = async (page = 1, limit = 10, filters = {}) => {
   if (difficulty) {
     where.difficulty = difficulty.toUpperCase();
   }
-  //
   if (mockTestId) {
     where.usedInMocks = {
       some: {
@@ -70,7 +70,7 @@ export const getQuestions = async (page = 1, limit = 10, filters = {}) => {
     prisma.questionBank.findMany({
       where,
       skip,
-      take: parseInt(limit),
+      take: l,
       orderBy: { createdAt: 'desc' },
       include: {
         topic: {
@@ -85,14 +85,13 @@ export const getQuestions = async (page = 1, limit = 10, filters = {}) => {
     data: questions,
     meta: {
       total,
-      page: parseInt(page),
-      limit: parseInt(limit),
-      totalPages: Math.ceil(total / limit)
+      page: p,
+      limit: l,
+      totalPages: Math.ceil(total / l)
     }
   };
 };
 
-// ... (keep getQuestionById, updateQuestion, deleteQuestion as is)
 export const getQuestionById = async (id) => {
   return await prisma.questionBank.findUnique({
     where: { id: parseInt(id) },
@@ -106,7 +105,7 @@ export const updateQuestion = async (id, data) => {
     data: {
       questionText: data.questionText,
       options: data.options,
-      correctIndex: parseInt(data.correctIndex),
+      correctIndex: data.correctIndex !== undefined ? parseInt(data.correctIndex) : undefined,
       explanation: data.explanation,
       difficulty: data.difficulty,
       topicId: data.topicId ? parseInt(data.topicId) : undefined
