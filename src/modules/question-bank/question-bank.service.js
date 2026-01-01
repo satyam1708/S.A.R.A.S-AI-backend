@@ -1,5 +1,45 @@
 import prisma from "../../lib/prisma.js";
 
+export const createQuestion = async (data) => {
+  const { 
+    topicId, 
+    questionText, 
+    options, 
+    correctIndex, 
+    difficulty, 
+    explanation, 
+    mockTestId, // Optional: Link to a test immediately
+    marks = 1,  // Optional: Default marks if linking to test
+    negative = 0 // Optional: Default negative if linking to test
+  } = data;
+
+  // 1. Create the base question
+  const question = await prisma.questionBank.create({
+    data: {
+      topicId: parseInt(topicId),
+      questionText,
+      options, // Assumes JSON array passed from frontend
+      correctIndex: parseInt(correctIndex),
+      difficulty,
+      explanation
+    }
+  });
+
+  // 2. If a Mock Test ID is provided, link it immediately
+  if (mockTestId) {
+    await prisma.mockTestQuestion.create({
+      data: {
+        mockTestId: parseInt(mockTestId),
+        questionId: question.id,
+        marks: parseFloat(marks),
+        negative: parseFloat(negative)
+      }
+    });
+  }
+
+  return question;
+};
+
 // 1. Get Questions with Pagination & Filters
 export const getQuestions = async (page = 1, limit = 10, filters = {}) => {
   const skip = (page - 1) * limit;

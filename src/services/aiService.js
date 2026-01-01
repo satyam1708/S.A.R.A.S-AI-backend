@@ -96,26 +96,21 @@ ${context}
     },
   ];
 
-  try {
-    // Use chatClient. No 'deployment' param needed.
+  return await withAIRetry(async () => {
     const result = await chatClient.chat.completions.create({
       messages: messages,
       max_tokens: 4000,
       response_format: { type: "json_object" },
     });
 
-    const jsonString = result.choices[0].message.content;
+    const cleanJson = cleanAIJSON(result.choices[0].message.content);
+    const parsed = JSON.parse(cleanJson);
 
-    const parsed = JSON.parse(jsonString);
     if (!parsed.quiz || !Array.isArray(parsed.quiz)) {
       throw new Error("AI returned invalid quiz format.");
     }
-
     return parsed.quiz;
-  } catch (error) {
-    console.error("Error generating quiz:", error);
-    throw new Error("Failed to get AI-generated quiz.");
-  }
+  });
 };
 
 export const summarizeArticle = async (articleContent) => {
@@ -265,7 +260,7 @@ Output must be STRICT JSON:
     },
   ];
 
-  try {
+  const rawBlocks = await withAIRetry(async () => {
     const result = await chatClient.chat.completions.create({
       messages,
       max_tokens: 4000,
@@ -273,48 +268,32 @@ Output must be STRICT JSON:
       response_format: { type: "json_object" },
     });
 
-    const jsonString = result.choices[0].message.content;
-    console.log("AI chunk response:", jsonString);
-
-    if (!jsonString) throw new Error("Empty AI response.");
-
-    let { blocks } = JSON.parse(jsonString);
-
-    if (!blocks || !Array.isArray(blocks)) {
+    const cleanJson = cleanAIJSON(result.choices[0].message.content);
+    const parsed = JSON.parse(cleanJson);
+    
+    if (!parsed.blocks || !Array.isArray(parsed.blocks)) {
       throw new Error("Invalid block format.");
     }
+    return parsed.blocks;
+  });
 
-    // ----------------------------------------
-    // ⭐ POST-PROCESSING: SIZE NORMALIZATION ⭐
-    // ----------------------------------------
+  // --- POST-PROCESSING (Unchanged logic, just safer execution) ---
+  const normalized = [];
+  for (let block of rawBlocks) {
+    if (!block || typeof block !== "string") continue;
+    block = block.trim();
+    if (block.length < 30 || !isNaN(Number(block))) continue;
 
-    const normalized = [];
-
-    for (let block of blocks) {
-      if (!block || typeof block !== "string") continue;
-      block = block.trim();
-
-      // Skip if it's just a number or too tiny
-      if (block.length < 30 || !isNaN(Number(block))) continue;
-
-      // If block is too long → split
-      if (block.length > 900) {
-        let parts = block.match(/.{1,700}(\s|$)/g); // split by ~700 chars
-        normalized.push(...parts.map((p) => p.trim()));
-      }
-      // If block is too short → merge with previous
-      else if (block.length < 200 && normalized.length > 0) {
-        normalized[normalized.length - 1] += " " + block;
-      } else {
-        normalized.push(block);
-      }
+    if (block.length > 900) {
+      let parts = block.match(/.{1,700}(\s|$)/g); 
+      normalized.push(...parts.map((p) => p.trim()));
+    } else if (block.length < 200 && normalized.length > 0) {
+      normalized[normalized.length - 1] += " " + block;
+    } else {
+      normalized.push(block);
     }
-
-    return normalized;
-  } catch (error) {
-    console.error("Error chunking content:", error);
-    throw new Error("Failed to generate content blocks.");
   }
+  return normalized;
 };
 
 export const generateFlashcardsFromContent = async (context) => {
@@ -427,19 +406,17 @@ OUTPUT FORMAT (Strict JSON):
     },
   ];
 
-  try {
+  return await withAIRetry(async () => {
     const result = await chatClient.chat.completions.create({
       messages: messages,
       max_tokens: 4000,
       response_format: { type: "json_object" },
     });
 
-    const parsed = JSON.parse(result.choices[0].message.content);
+    const cleanJson = cleanAIJSON(result.choices[0].message.content);
+    const parsed = JSON.parse(cleanJson);
     return parsed.questions || [];
-  } catch (error) {
-    console.error("Error parsing questions:", error);
-    throw new Error("Failed to extract questions from file.");
-  }
+  });
 };
 
 export const generateCurrentAffairsQuestions = async (newsArticles, count = 5) => {
@@ -626,16 +603,19 @@ export const generateQuestionsFromSyllabus = async (courseName, subjectName, cou
   ];
 
   try {
-    const result = await chatClient.chat.completions.create({
-      messages: messages,
-      max_tokens: 3500,
-      response_format: { type: "json_object" },
-    });
+    return await withAIRetry(async () => {
+      const result = await chatClient.chat.completions.create({
+        messages: messages,
+        max_tokens: 3500,
+        response_format: { type: "json_object" },
+      });
 
-    const parsed = JSON.parse(result.choices[0].message.content);
-    return parsed.questions || [];
+      const cleanJson = cleanAIJSON(result.choices[0].message.content);
+      const parsed = JSON.parse(cleanJson);
+      return parsed.questions || [];
+    });
   } catch (error) {
-    console.error(`Error generating syllabus questions for ${subjectName}:`, error);
-    return []; // Return empty array on failure to allow other subjects to proceed
+    console.error(`Error generating syllabus questions for ${subjectName}:`, error.message);
+    return []; // Return empty on failure to keep the exam generation alive
   }
 };

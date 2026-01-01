@@ -16,6 +16,16 @@ export const listQuestions = async (req, res) => {
     res.status(500).json({ error: error.message });
   }
 };
+export const createQuestion = async (req, res) => {
+  try {
+    // We expect topicId, question data, and optional mockTestId
+    const result = await questionService.createQuestion(req.body);
+    res.status(201).json(result);
+  } catch (error) {
+    console.error("Create Error:", error);
+    res.status(500).json({ error: "Failed to create question" });
+  }
+};
 
 export const getQuestion = async (req, res) => {
   try {

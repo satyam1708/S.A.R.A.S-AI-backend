@@ -375,7 +375,7 @@ export const processPreviousYearPaper = async (
 };
 
 /**
- * Enhanced Mock Generator with 'useAI' flag support
+ * [UPDATED] Enterprise-Grade Mock Generator (Sequential Processing)
  */
 export const generateMockExam = async (
   courseId,
@@ -395,7 +395,7 @@ export const generateMockExam = async (
     throw new Error("Course or Syllabus missing.");
   }
 
-  // --- FILTER FOR SECTIONAL EXAMS ---
+  // Filter subjects
   let targetSubjects = course.subjects;
   if (examType === "SECTIONAL" && subjectId) {
     targetSubjects = course.subjects.filter(
@@ -405,48 +405,56 @@ export const generateMockExam = async (
       throw new Error("Selected subject not in syllabus.");
   }
 
+  // 1. Create the Shell Exam first
   const mockTest = await prisma.mockTest.create({
     data: {
       title: title,
       courseId: course.id,
       examType: examType,
       subjectId: subjectId ? parseInt(subjectId) : null,
-      durationMin: examType === "SECTIONAL" ? 30 : 60, // Default duration logic
+      durationMin: examType === "SECTIONAL" ? 30 : 60,
       totalMarks: 0,
-      isLive: false,
+      isLive: false, // Hidden until generation is complete
     },
   });
 
-  const subjectProcessingPromises = targetSubjects.map(async (config) => {
+  // 2. Sequential Subject Processing (More stable than Promise.all)
+  // We process one subject at a time to prevent AI Rate Limits.
+  const allMockQuestions = [];
+
+  for (const config of targetSubjects) {
     const subjectName = config.subject.name;
     const countNeeded = config.questionCount;
     let questionsToAdd = [];
 
-    const isCurrentAffairs = subjectName
-      .toLowerCase()
-      .includes("current affairs");
+    console.log(`[ExamGen] Processing subject: ${subjectName}...`);
+
+    const isCurrentAffairs = subjectName.toLowerCase().includes("current affairs");
 
     if (isCurrentAffairs) {
+      // Strategy A: Current Affairs (Pure AI Generation)
       const generatedQs = await aiService.generateQuestionsFromSyllabus(
         course.name,
         "Current Affairs",
         countNeeded
       );
-
-      const savePromises = generatedQs.map((gq) =>
-        prisma.questionBank.create({
-          data: {
-            questionText: gq.questionText,
-            options: gq.options,
-            correctIndex: gq.correctIndex,
-            explanation: gq.explanation,
-            topicId: config.subjectId, // Fallback to subject ID as topic
-            difficulty: "MEDIUM",
-          },
-        })
-      );
-      questionsToAdd = await Promise.all(savePromises);
+      
+      // Save generated questions immediately
+      for (const gq of generatedQs) {
+         const savedQ = await prisma.questionBank.create({
+            data: {
+              questionText: gq.questionText,
+              options: gq.options,
+              correctIndex: gq.correctIndex,
+              explanation: gq.explanation,
+              topicId: config.subjectId, 
+              difficulty: "MEDIUM",
+            },
+         });
+         questionsToAdd.push(savedQ);
+      }
     } else {
+      // Strategy B: Database First, then AI Fill
       if (!useAI) {
         questionsToAdd = await prisma.questionBank.findMany({
           where: { topic: { subjectId: config.subjectId } },
@@ -456,48 +464,49 @@ export const generateMockExam = async (
 
       if (questionsToAdd.length < countNeeded) {
         const deficit = countNeeded - questionsToAdd.length;
+        console.log(`[ExamGen] Deficit for ${subjectName}: ${deficit}. Generating...`);
+        
         const generatedQs = await aiService.generateQuestionsFromSyllabus(
           course.name,
           subjectName,
           deficit
         );
 
-        // Find a valid topic ID
         const targetTopicId = config.subject.topics[0]?.id || config.subjectId;
 
-        const savePromises = generatedQs.map((gq) =>
-          prisma.questionBank.create({
-            data: {
-              questionText: gq.questionText,
-              options: gq.options,
-              correctIndex: gq.correctIndex,
-              explanation: gq.explanation,
-              topicId: targetTopicId,
-              difficulty: "MEDIUM",
-            },
-          })
-        );
-        const newQs = await Promise.all(savePromises);
-        questionsToAdd = [...questionsToAdd, ...newQs];
+        for (const gq of generatedQs) {
+           const savedQ = await prisma.questionBank.create({
+             data: {
+               questionText: gq.questionText,
+               options: gq.options,
+               correctIndex: gq.correctIndex,
+               explanation: gq.explanation,
+               topicId: targetTopicId,
+               difficulty: "MEDIUM",
+             },
+           });
+           questionsToAdd.push(savedQ);
+        }
       }
     }
 
-    return questionsToAdd.map((q) => ({
+    // Map to MockTestQuestion format
+    const mappedQs = questionsToAdd.map((q) => ({
       mockTestId: mockTest.id,
       questionId: q.id,
       marks: config.marksPerQ,
       negative: config.negativeMarks,
     }));
-  });
 
-  const results = await Promise.all(subjectProcessingPromises);
-  const allMockQuestions = results.flat();
+    allMockQuestions.push(...mappedQs);
+  }
 
   if (allMockQuestions.length === 0) {
     await prisma.mockTest.delete({ where: { id: mockTest.id } });
-    throw new Error("Generation Failed: No questions found or generated.");
+    throw new Error("Generation Failed: No questions could be gathered.");
   }
 
+  // Bulk Insert Links
   await prisma.mockTestQuestion.createMany({ data: allMockQuestions });
 
   const grandTotalMarks = allMockQuestions.reduce(
@@ -505,12 +514,13 @@ export const generateMockExam = async (
     0
   );
 
-  await prisma.mockTest.update({
+  // 3. Mark Exam as Live
+  const finalMock = await prisma.mockTest.update({
     where: { id: mockTest.id },
     data: { totalMarks: grandTotalMarks, isLive: true },
   });
 
-  return mockTest;
+  return finalMock;
 };
 
 export const getMockTestsForCourse = async (courseId) => {
