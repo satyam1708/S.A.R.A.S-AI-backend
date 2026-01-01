@@ -1,12 +1,13 @@
 // src/modules/gs/gs.controller.js
 import * as GsService from "./gs.service.js";
-import { generateEducationalImage } from "../../services/aiService.js";
+import logger from "../../lib/logger.js";
 
 export const getSubjects = async (req, res, next) => {
   try {
     const subjects = await GsService.getSubjectsAndTopics();
     res.json(subjects);
   } catch (error) {
+    logger.error(`Get Subjects Failed: ${error.message}`);
     next(error);
   }
 };
@@ -20,6 +21,9 @@ export const getChatHistory = async (req, res, next) => {
     );
     res.json(messages);
   } catch (error) {
+    logger.error(
+      `Get Chat History Failed [User:${req.user.id}]: ${error.message}`
+    );
     next(error);
   }
 };
@@ -28,6 +32,7 @@ export const postMessage = async (req, res, next) => {
   try {
     const { topicId } = req.params;
     const { message } = req.body;
+
     const aiResponse = await GsService.postNewMessage(
       req.user.id,
       parseInt(topicId),
@@ -35,6 +40,7 @@ export const postMessage = async (req, res, next) => {
     );
     res.json({ role: "assistant", content: aiResponse });
   } catch (error) {
+    logger.error(`Post Message Failed: ${error.message}`);
     next(error);
   }
 };
@@ -47,10 +53,6 @@ export const streamMessage = async (req, res, next) => {
     const { topicId } = req.params;
     const { message } = req.body;
     const { id: userId } = req.user;
-
-    if (!message) {
-      return res.status(400).json({ message: "Message is required" });
-    }
 
     const { stream, sessionId } = await GsService.streamNewMessage(
       userId,
@@ -92,16 +94,15 @@ export const streamMessage = async (req, res, next) => {
       await GsService.saveAiResponse(sessionId, fullResponse);
     }
   } catch (error) {
-    console.error("Stream Error:", error);
+    logger.error(`Stream Error [User:${req.user.id}]: ${error.message}`);
     if (!res.headersSent) {
-      res.status(500).json({ message: error.message });
+      res.status(500).json({ message: "Streaming failed." });
     } else if (!res.writableEnded) {
       res.end();
     }
   }
 };
 
-// ... (Keep existing handlers for markTopicAsLearned, getRevision, createChatFromContext, Quiz, Flashcards) ...
 export const markTopicAsLearned = async (req, res, next) => {
   try {
     const { topicId } = req.params;
@@ -117,6 +118,7 @@ export const getRevision = async (req, res, next) => {
     const revision = await GsService.getRevisionForUser(req.user.id);
     res.json({ role: "assistant", content: revision });
   } catch (error) {
+    logger.error(`Revision Error: ${error.message}`);
     next(error);
   }
 };
@@ -125,11 +127,12 @@ export const createChatFromContext = async (req, res, next) => {
   try {
     const { id: userId } = req.user;
     const { context } = req.body;
-    if (!context)
-      return res.status(400).json({ message: "Context is required" });
+
     const newTopic = await GsService.createTopicFromContext(userId, context);
+    logger.info(`New Context Topic Created: ${newTopic.name} [User:${userId}]`);
     res.status(201).json(newTopic);
   } catch (error) {
+    logger.error(`Create Chat From Context Failed: ${error.message}`);
     next(error);
   }
 };
@@ -147,9 +150,6 @@ export const getQuizzesForTopic = async (req, res, next) => {
 export const checkAnswer = async (req, res, next) => {
   try {
     const { questionId, selectedAnswerIndex } = req.body;
-    if (questionId == null || selectedAnswerIndex == null) {
-      return res.status(400).json({ message: "Missing data." });
-    }
     const result = await GsService.checkAnswer(
       parseInt(questionId),
       parseInt(selectedAnswerIndex)
@@ -165,9 +165,7 @@ export const submitQuizForTopic = async (req, res, next) => {
     const { quizId } = req.params;
     const { answers } = req.body;
     const { id: userId } = req.user;
-    if (!answers || !Array.isArray(answers)) {
-      return res.status(400).json({ message: "Invalid answers." });
-    }
+
     const results = await GsService.submitQuiz(
       userId,
       parseInt(quizId),
@@ -175,6 +173,7 @@ export const submitQuizForTopic = async (req, res, next) => {
     );
     res.json(results);
   } catch (error) {
+    logger.error(`Quiz Submit Failed: ${error.message}`);
     next(error);
   }
 };
@@ -193,9 +192,7 @@ export const reviewFlashcardController = async (req, res, next) => {
   try {
     const { id: userId } = req.user;
     const { flashcardId, rating } = req.body;
-    if (flashcardId == null || rating == null) {
-      return res.status(400).json({ message: "Missing data." });
-    }
+
     await GsService.reviewFlashcard(
       userId,
       parseInt(flashcardId),
@@ -207,20 +204,21 @@ export const reviewFlashcardController = async (req, res, next) => {
   }
 };
 
-// [UPDATED] Image Generation Controller
 export const generateImage = async (req, res, next) => {
   try {
-    const { topicId } = req.params; // Get context
+    const { topicId } = req.params;
     const { prompt } = req.body;
     const { id: userId } = req.user;
 
-    if (!prompt) return res.status(400).json({ message: "Prompt is required" });
-
-    // Call the smart service that saves everything
-    const message = await GsService.generateAndSaveImage(userId, parseInt(topicId), prompt);
-    
-    res.json(message); // Return the full message object (with ID, content, imageUrl)
+    const message = await GsService.generateAndSaveImage(
+      userId,
+      parseInt(topicId),
+      prompt
+    );
+    logger.info(`Image Generated for Topic ${topicId} [User:${userId}]`);
+    res.json(message);
   } catch (error) {
+    logger.error(`Image Gen Failed: ${error.message}`);
     next(error);
   }
 };
