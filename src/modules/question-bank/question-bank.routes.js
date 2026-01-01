@@ -1,13 +1,12 @@
 import express from 'express';
 import * as questionController from './question-bank.controller.js';
-import * as validators from './question-bank.validation.js'; // Import Schemas
-import { validate } from '../../middleware/validate.middleware.js'; // Import Middleware
+import * as validators from './question-bank.validation.js';
+import { validate } from '../../middleware/validate.middleware.js';
 import { authMiddleware } from '../../middleware/auth.middleware.js';
 import { adminMiddleware } from '../../middleware/admin.middleware.js';
 
 const router = express.Router();
 
-// All routes require Admin access
 router.use(authMiddleware, adminMiddleware);
 
 router.get(

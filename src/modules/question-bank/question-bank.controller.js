@@ -1,13 +1,9 @@
 import * as questionService from './question-bank.service.js';
-import logger from '../../lib/logger.js'; // Enterprise Logger
+import logger from '../../lib/logger.js';
 
 export const listQuestions = async (req, res) => {
   try {
-    // Validated query params are available in req.query via Zod (if using strict parsing)
-    // But since we use transforms in validation, we can access them directly or rely on the service to handle types.
-    // Ideally, the validation middleware puts the parsed output back into req.query.
-    // If not, we just destructure and rely on service parsing.
-    
+    // Data here is ALREADY validated and transformed (e.g., page is Number 1, not String "1")
     const { page, limit, search, topicId, difficulty, mockTestId } = req.query;
     
     const result = await questionService.getQuestions(page, limit, {
@@ -26,7 +22,7 @@ export const listQuestions = async (req, res) => {
 export const createQuestion = async (req, res) => {
   try {
     const result = await questionService.createQuestion(req.body);
-    logger.info(`Question Created: [ID: ${result.id}] for Topic ${result.topicId}`);
+    logger.info(`Question Created: [ID: ${result.id}] Topic: ${result.topicId}`);
     res.status(201).json(result);
   } catch (error) {
     logger.error(`Create Question Failed: ${error.message}`);
