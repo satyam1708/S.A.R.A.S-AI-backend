@@ -1,3 +1,4 @@
+//src/modules/courses/courses.service.js
 import prisma from '../../lib/prisma.js';
 
 // --- CORE COURSE MANAGEMENT ---
