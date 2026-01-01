@@ -1,6 +1,7 @@
+// src/modules/bookmarks/bookmarks.service.js
 import prisma from '../../lib/prisma.js';
 
-// A helper for custom errors
+// Helper for Service-level errors
 class AppError extends Error {
   constructor(message, statusCode) {
     super(message);
@@ -10,13 +11,12 @@ class AppError extends Error {
 
 export const create = async (userId, data) => {
   const { title, url, description, image, publishedAt, source } = data;
-  if (!title || !url) {
-    throw new AppError('Title and URL are required', 400);
-  }
 
+  // Check existence
   const exists = await prisma.bookmark.findFirst({
     where: { userId, url },
   });
+  
   if (exists) {
     throw new AppError('Bookmark already exists', 409);
   }
@@ -59,7 +59,7 @@ export const getPublicBookmarks = async () => {
     include: {
       user: {
         select: {
-          name: true, // Select the user's name
+          name: true, 
         },
       },
     },
