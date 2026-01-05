@@ -51,6 +51,17 @@ app.use('/api/english', englishRoutes);
 app.use('/api/question-bank', questionBankRoutes);
 // app.use('/api/gs', gsRoutes); // We will add this in Phase 2
 
+// Global Error Handler
+app.use((err, req, res, next) => {
+  console.error("🔥 Global Error:", err.stack);
+  
+  const statusCode = err.statusCode || 500;
+  res.status(statusCode).json({
+    status: 'error',
+    message: err.message || 'Internal Server Error'
+  });
+});
+
 // --- Start Server ---
 app.listen(PORT, () => {
   console.log(`✅ Server running on port ${PORT}`);
