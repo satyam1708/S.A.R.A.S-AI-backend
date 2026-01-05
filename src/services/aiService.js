@@ -368,7 +368,8 @@ export const generateExamAnalysis = async (
   const messages = [
     {
       role: "system",
-      content: `Analyze student performance.
+      // FIX: Added "Output STRICT JSON"
+      content: `Analyze student performance. Output STRICT JSON.
       schema: { "summary": "...", "strengths": [], "weaknesses": [], "actionPlan": "..." }`,
     },
     {
@@ -401,7 +402,8 @@ export const generateEnglishDose = async () => {
   const messages = [
     {
       role: "system",
-      content: `Generate English Learning content.
+      // FIX: Added "Output STRICT JSON"
+      content: `Generate English Learning content. Output STRICT JSON.
       schema: { 
         "vocabulary": [{ "word": "...", "meaning": "...", "synonyms": [], "antonyms": [], "sentence": "..." }],
         "idiom": { "phrase": "...", "meaning": "...", "sentence": "..." },
@@ -456,8 +458,10 @@ export const generateQuestionsFromSyllabus = async (
   const messages = [
     {
       role: "system",
+      // FIX: Added "Output STRICT JSON" to satisfy API requirements
       content: `Generate ${count} MCQs for ${subjectName} (${courseName}).
       Difficulty: Mixed (Easy/Medium/Hard).
+      Output STRICT JSON.
       schema: { "questions": [{ "questionText": "...", "options": [], "correctIndex": 0, "explanation": "...", "difficulty": "MEDIUM" }] }`,
     },
     { role: "user", content: "Generate questions." },

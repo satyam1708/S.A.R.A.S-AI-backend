@@ -29,7 +29,8 @@ export const generateSchema = z.object({
     title: z.string().min(3, "Title must be at least 3 characters"),
     useAI: z.boolean().optional(),
     examType: z.enum(["FULL_MOCK", "SECTIONAL"]).optional(),
-    subjectId: z.number().nullable().optional()
+    // UPDATED: Use coerce.number() to handle string inputs like "5" from frontend
+    subjectId: z.coerce.number().nullable().optional()
   }).refine((data) => {
     // Custom Logic: If SECTIONAL, subjectId is required
     if (data.examType === "SECTIONAL" && !data.subjectId) return false;

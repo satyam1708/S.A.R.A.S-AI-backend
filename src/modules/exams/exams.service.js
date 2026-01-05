@@ -427,6 +427,32 @@ export const generateMockExam = async (
     const countNeeded = config.questionCount;
     let questionsToAdd = [];
 
+    // --- FIX STARTS: RESOLVE VALID TOPIC ID ---
+    let targetTopicId = null;
+    if (config.subject.topics && config.subject.topics.length > 0) {
+      // Use the first available topic for this subject
+      targetTopicId = config.subject.topics[0].id;
+    } else {
+      // Fallback: Check if a "General" topic exists for this subject, or create it.
+      // This is crucial because QuestionBank requires a valid topicId, NOT a subjectId.
+      const existingTopic = await prisma.topic.findFirst({
+        where: { subjectId: config.subjectId },
+      });
+
+      if (existingTopic) {
+        targetTopicId = existingTopic.id;
+      } else {
+        const newTopic = await prisma.topic.create({
+          data: {
+            name: "General",
+            subjectId: config.subjectId,
+          },
+        });
+        targetTopicId = newTopic.id;
+      }
+    }
+    // --- FIX ENDS ---
+
     console.log(`[ExamGen] Processing subject: ${subjectName}...`);
 
     const isCurrentAffairs = subjectName.toLowerCase().includes("current affairs");
@@ -447,7 +473,7 @@ export const generateMockExam = async (
               options: gq.options,
               correctIndex: gq.correctIndex,
               explanation: gq.explanation,
-              topicId: config.subjectId, 
+              topicId: targetTopicId, // Use the resolved Topic ID
               difficulty: "MEDIUM",
             },
          });
@@ -472,8 +498,6 @@ export const generateMockExam = async (
           deficit
         );
 
-        const targetTopicId = config.subject.topics[0]?.id || config.subjectId;
-
         for (const gq of generatedQs) {
            const savedQ = await prisma.questionBank.create({
              data: {
@@ -481,7 +505,7 @@ export const generateMockExam = async (
                options: gq.options,
                correctIndex: gq.correctIndex,
                explanation: gq.explanation,
-               topicId: targetTopicId,
+               topicId: targetTopicId, // Use the resolved Topic ID
                difficulty: "MEDIUM",
              },
            });
