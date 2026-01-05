@@ -32,6 +32,7 @@ model User {
   quizAttempts      UserQuizAttempt[]
   flashcardStudies  UserFlashcardStudy[]
   mockTestAttempts  MockTestAttempt[]
+  refreshTokens     RefreshToken[]
 
   createdAt DateTime @default(now())
 }
@@ -146,6 +147,16 @@ model LearningHistory {
   @@index([userId]) // Performance Index
 }
 
+// ADD: Refresh Token Model for JWT Architecture
+model RefreshToken {
+  id        Int      @id @default(autoincrement())
+  token     String   @unique
+  userId    Int
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  expiresAt DateTime
+  revoked   Boolean  @default(false)
+  createdAt DateTime @default(now())
+}
 // ===========================================
 // 3. CENTRAL QUESTION BANK & MOCK TESTS
 // ===========================================
@@ -160,12 +171,14 @@ model QuestionBank {
   options      Json
   correctIndex Int
   explanation  String? @db.Text
+  deletedAt    DateTime?
 
   usedInMocks MockTestQuestion[]
   mockAnswers MockTestAnswer[]
   createdAt   DateTime           @default(now())
 
   @@index([topicId]) // Performance Index
+  @@index([deletedAt, topicId])
 }
 
 model MockTest {

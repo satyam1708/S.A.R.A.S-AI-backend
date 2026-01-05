@@ -47,7 +47,10 @@ export const getQuestions = async (page = 1, limit = 10, filters = {}) => {
   
   const { search, topicId, difficulty, mockTestId } = filters;
 
-  const where = {};
+  // FIX: Always filter out soft-deleted items
+  const where = {
+    deletedAt: null 
+  };
 
   if (search) {
     where.questionText = { contains: search, mode: 'insensitive' };
@@ -93,8 +96,11 @@ export const getQuestions = async (page = 1, limit = 10, filters = {}) => {
 };
 
 export const getQuestionById = async (id) => {
-  return await prisma.questionBank.findUnique({
-    where: { id: parseInt(id) },
+  return await prisma.questionBank.findFirst({
+    where: { 
+      id: parseInt(id),
+      deletedAt: null // Ensure we don't fetch deleted ones by ID
+    },
     include: { topic: true }
   });
 };
@@ -113,8 +119,10 @@ export const updateQuestion = async (id, data) => {
   });
 };
 
+// FIX: Soft Delete instead of hard delete
 export const deleteQuestion = async (id) => {
-  return await prisma.questionBank.delete({
-    where: { id: parseInt(id) }
+  return await prisma.questionBank.update({
+    where: { id: parseInt(id) },
+    data: { deletedAt: new Date() } // Mark as deleted
   });
 };

@@ -1,5 +1,6 @@
 import prisma from "../../lib/prisma.js";
 import * as aiService from "../../services/aiService.js";
+import pLimit from 'p-limit';
 
 // =========================================================
 // 1. EXAM TAKING CORE (Start -> Heartbeat -> Finish)
@@ -384,6 +385,7 @@ export const generateMockExam = async (
   examType = "FULL_MOCK",
   subjectId = null
 ) => {
+  // 1. Fetch Course & Create Shell (Same as before)
   const course = await prisma.course.findUnique({
     where: { id: parseInt(courseId) },
     include: {
@@ -395,7 +397,6 @@ export const generateMockExam = async (
     throw new Error("Course or Syllabus missing.");
   }
 
-  // Filter subjects
   let targetSubjects = course.subjects;
   if (examType === "SECTIONAL" && subjectId) {
     targetSubjects = course.subjects.filter(
@@ -405,7 +406,6 @@ export const generateMockExam = async (
       throw new Error("Selected subject not in syllabus.");
   }
 
-  // 1. Create the Shell Exam first
   const mockTest = await prisma.mockTest.create({
     data: {
       title: title,
@@ -414,131 +414,120 @@ export const generateMockExam = async (
       subjectId: subjectId ? parseInt(subjectId) : null,
       durationMin: examType === "SECTIONAL" ? 30 : 60,
       totalMarks: 0,
-      isLive: false, // Hidden until generation is complete
+      isLive: false,
     },
   });
 
-  // 2. Sequential Subject Processing (More stable than Promise.all)
-  // We process one subject at a time to prevent AI Rate Limits.
+  // 2. PARALLEL PROCESSING START
+  // Run up to 3 subjects at the same time. No Redis needed.
+  const limit = pLimit(3); 
   const allMockQuestions = [];
 
-  for (const config of targetSubjects) {
-    const subjectName = config.subject.name;
-    const countNeeded = config.questionCount;
-    let questionsToAdd = [];
+  const subjectPromises = targetSubjects.map((config) => 
+    limit(async () => {
+      const subjectName = config.subject.name;
+      const countNeeded = config.questionCount;
+      let questionsToAdd = [];
 
-    // --- FIX STARTS: RESOLVE VALID TOPIC ID ---
-    let targetTopicId = null;
-    if (config.subject.topics && config.subject.topics.length > 0) {
-      // Use the first available topic for this subject
-      targetTopicId = config.subject.topics[0].id;
-    } else {
-      // Fallback: Check if a "General" topic exists for this subject, or create it.
-      // This is crucial because QuestionBank requires a valid topicId, NOT a subjectId.
-      const existingTopic = await prisma.topic.findFirst({
-        where: { subjectId: config.subjectId },
-      });
-
-      if (existingTopic) {
-        targetTopicId = existingTopic.id;
+      // --- Topic Resolution Logic (Same as before) ---
+      let targetTopicId = null;
+      if (config.subject.topics && config.subject.topics.length > 0) {
+        targetTopicId = config.subject.topics[0].id;
       } else {
-        const newTopic = await prisma.topic.create({
-          data: {
-            name: "General",
-            subjectId: config.subjectId,
-          },
+        const existingTopic = await prisma.topic.findFirst({
+          where: { subjectId: config.subjectId },
         });
-        targetTopicId = newTopic.id;
-      }
-    }
-    // --- FIX ENDS ---
-
-    console.log(`[ExamGen] Processing subject: ${subjectName}...`);
-
-    const isCurrentAffairs = subjectName.toLowerCase().includes("current affairs");
-
-    if (isCurrentAffairs) {
-      // Strategy A: Current Affairs (Pure AI Generation)
-      const generatedQs = await aiService.generateQuestionsFromSyllabus(
-        course.name,
-        "Current Affairs",
-        countNeeded
-      );
-      
-      // Save generated questions immediately
-      for (const gq of generatedQs) {
-         const savedQ = await prisma.questionBank.create({
-            data: {
-              questionText: gq.questionText,
-              options: gq.options,
-              correctIndex: gq.correctIndex,
-              explanation: gq.explanation,
-              topicId: targetTopicId, // Use the resolved Topic ID
-              difficulty: "MEDIUM",
-            },
-         });
-         questionsToAdd.push(savedQ);
-      }
-    } else {
-      // Strategy B: Database First, then AI Fill
-      if (!useAI) {
-        questionsToAdd = await prisma.questionBank.findMany({
-          where: { topic: { subjectId: config.subjectId } },
-          take: countNeeded,
-        });
+        if (existingTopic) {
+          targetTopicId = existingTopic.id;
+        } else {
+          const newTopic = await prisma.topic.create({
+            data: { name: "General", subjectId: config.subjectId },
+          });
+          targetTopicId = newTopic.id;
+        }
       }
 
-      if (questionsToAdd.length < countNeeded) {
-        const deficit = countNeeded - questionsToAdd.length;
-        console.log(`[ExamGen] Deficit for ${subjectName}: ${deficit}. Generating...`);
-        
+      console.log(`[ExamGen] Processing subject: ${subjectName}...`);
+
+      const isCurrentAffairs = subjectName.toLowerCase().includes("current affairs");
+
+      if (isCurrentAffairs) {
         const generatedQs = await aiService.generateQuestionsFromSyllabus(
           course.name,
-          subjectName,
-          deficit
+          "Current Affairs",
+          countNeeded
         );
-
         for (const gq of generatedQs) {
            const savedQ = await prisma.questionBank.create({
-             data: {
-               questionText: gq.questionText,
-               options: gq.options,
-               correctIndex: gq.correctIndex,
-               explanation: gq.explanation,
-               topicId: targetTopicId, // Use the resolved Topic ID
-               difficulty: "MEDIUM",
-             },
+              data: {
+                questionText: gq.questionText,
+                options: gq.options,
+                correctIndex: gq.correctIndex,
+                explanation: gq.explanation,
+                topicId: targetTopicId,
+                difficulty: "MEDIUM",
+              },
            });
            questionsToAdd.push(savedQ);
         }
+      } else {
+        if (!useAI) {
+          questionsToAdd = await prisma.questionBank.findMany({
+            where: { topic: { subjectId: config.subjectId }, deletedAt: null }, // Filter soft deleted
+            take: countNeeded,
+          });
+        }
+
+        if (questionsToAdd.length < countNeeded) {
+          const deficit = countNeeded - questionsToAdd.length;
+          console.log(`[ExamGen] Deficit for ${subjectName}: ${deficit}. Generating...`);
+          
+          const generatedQs = await aiService.generateQuestionsFromSyllabus(
+            course.name,
+            subjectName,
+            deficit
+          );
+
+          for (const gq of generatedQs) {
+             const savedQ = await prisma.questionBank.create({
+               data: {
+                 questionText: gq.questionText,
+                 options: gq.options,
+                 correctIndex: gq.correctIndex,
+                 explanation: gq.explanation,
+                 topicId: targetTopicId,
+                 difficulty: "MEDIUM",
+               },
+             });
+             questionsToAdd.push(savedQ);
+          }
+        }
       }
-    }
 
-    // Map to MockTestQuestion format
-    const mappedQs = questionsToAdd.map((q) => ({
-      mockTestId: mockTest.id,
-      questionId: q.id,
-      marks: config.marksPerQ,
-      negative: config.negativeMarks,
-    }));
+      // Return the mapped questions for this subject
+      return questionsToAdd.map((q) => ({
+        mockTestId: mockTest.id,
+        questionId: q.id,
+        marks: config.marksPerQ,
+        negative: config.negativeMarks,
+      }));
+    })
+  );
 
-    allMockQuestions.push(...mappedQs);
-  }
+  // Wait for all subjects
+  const results = await Promise.all(subjectPromises);
+  results.forEach(qs => allMockQuestions.push(...qs));
 
   if (allMockQuestions.length === 0) {
     await prisma.mockTest.delete({ where: { id: mockTest.id } });
     throw new Error("Generation Failed: No questions could be gathered.");
   }
 
-  // Bulk Insert Links
+  // Bulk Insert
   await prisma.mockTestQuestion.createMany({ data: allMockQuestions });
 
-  const grandTotalMarks = allMockQuestions.reduce(
-    (sum, item) => sum + item.marks,
-    0
-  );
+  const grandTotalMarks = allMockQuestions.reduce((sum, item) => sum + item.marks, 0);
 
-  // 3. Mark Exam as Live
   const finalMock = await prisma.mockTest.update({
     where: { id: mockTest.id },
     data: { totalMarks: grandTotalMarks, isLive: true },

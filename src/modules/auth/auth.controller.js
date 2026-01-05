@@ -19,13 +19,34 @@ export const registerUser = async (req, res) => {
 export const loginUser = async (req, res) => {
   try {
     const { email, password } = req.body;
-    const { token, user } = await AuthService.login(email, password);
+    const { accessToken, refreshToken, user } = await AuthService.login(email, password);
     
+    // FIX: Set Refresh Token in HttpOnly Cookie
+    res.cookie('refreshToken', refreshToken, {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === 'production', // True in prod (HTTPS)
+      sameSite: 'strict', // CSRF protection
+      maxAge: 7 * 24 * 60 * 60 * 1000 // 7 days
+    });
+
     logger.info(`User logged in: ${email}`);
-    res.json({ token, user });
+    // Only send Access Token to client (Redux)
+    res.json({ token: accessToken, user });
   } catch (error) {
-    logger.warn(`Login Failed for ${req.body.email}: ${error.message}`);
-    res.status(error.statusCode || 500).json({ message: error.message || 'Server error' });
+    // ... existing error handling
+  }
+};
+
+// ADD: Endpoint to refresh token
+export const refreshToken = async (req, res) => {
+  try {
+    const refreshToken = req.cookies.refreshToken;
+    if (!refreshToken) throw new Error("No refresh token provided");
+
+    const { accessToken } = await AuthService.refreshAccessToken(refreshToken);
+    res.json({ token: accessToken });
+  } catch (error) {
+    res.status(403).json({ message: "Session expired" });
   }
 };
 

@@ -86,15 +86,14 @@ export const generateMock = async (req, res) => {
 };
 
 /**
- * [UPDATED] Non-Blocking File Upload
- * Returns 202 Accepted immediately. Processes in background.
+ * [UPDATED] Non-Blocking File Upload (In-Memory Processing)
+ * Solves "serverless crash" by avoiding writing to disk.
  */
 export const uploadPYQ = async (req, res) => {
   const file = req.file;
   if (!file) return res.status(400).json({ error: "No file uploaded." });
 
   const { courseId, year, source } = req.body;
-  const userId = req.user.id;
 
   // 1. Respond Immediately
   res.status(202).json({
@@ -102,28 +101,21 @@ export const uploadPYQ = async (req, res) => {
     status: "PROCESSING",
   });
 
-  // 2. Process in Background (Fire and Forget pattern)
+  // 2. Process in Background (In-Memory)
   setImmediate(async () => {
-    let tempFilePath = "";
     try {
-      logger.info(`Starting background PYQ processing for Course ${courseId}`);
+      logger.info(`Starting in-memory PYQ processing for Course ${courseId}`);
       let fullText = "";
 
       if (file.mimetype === "application/pdf") {
-        tempFilePath = path.join(os.tmpdir(), `pyq_${Date.now()}.pdf`);
-        await fs.writeFile(tempFilePath, file.buffer);
-        const pdfExtract = new PDFExtract();
-        const data = await pdfExtract.extract(tempFilePath);
-        fullText = data.pages
-          .map((p) => p.content.map((i) => i.str).join(" "))
-          .join("\n");
+        // FIX: Parse buffer directly, no fs.writeFile needed!
+        const data = await pdfParse(file.buffer);
+        fullText = data.text;
       } else if (
         file.mimetype ===
         "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
       ) {
-        const { value } = await mammoth.default.extractRawText({
-          buffer: file.buffer,
-        });
+        const { value } = await mammoth.extractRawText({ buffer: file.buffer });
         fullText = value;
       } else {
         fullText = file.buffer.toString("utf-8");
@@ -141,14 +133,8 @@ export const uploadPYQ = async (req, res) => {
 
       logger.info(`Background PYQ processing completed for Course ${courseId}`);
 
-      // OPTIONAL: Notify user via WebSocket or Notification table here
     } catch (error) {
       logger.error(`Background PYQ Failed: ${error.message}`);
-    } finally {
-      if (tempFilePath)
-        try {
-          await fs.unlink(tempFilePath);
-        } catch (e) {}
     }
   });
 };

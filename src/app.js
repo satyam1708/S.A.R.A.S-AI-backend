@@ -11,6 +11,7 @@ import courseRoutes from './modules/courses/courses.routes.js';
 import examRoutes from './modules/exams/exams.routes.js';
 import englishRoutes from './modules/english/english.routes.js';
 import questionBankRoutes from './modules/question-bank/question-bank.routes.js';
+import cookieParser from 'cookie-parser';
 // We will import gsRoutes here later
 
 dotenv.config();
@@ -20,6 +21,7 @@ const PORT = process.env.PORT || 5000;
 
 // --- Middleware Setup ---
 app.use(express.json());
+app.use(cookieParser());
 
 const allowedOrigins = [
   'http://localhost:5173',
@@ -51,14 +53,27 @@ app.use('/api/english', englishRoutes);
 app.use('/api/question-bank', questionBankRoutes);
 // app.use('/api/gs', gsRoutes); // We will add this in Phase 2
 
-// Global Error Handler
+// Enterprise Global Error Handler
 app.use((err, req, res, next) => {
-  console.error("🔥 Global Error:", err.stack);
+  // 1. Log the error structurally (for Datadog/ELK)
+  console.error(JSON.stringify({
+    level: 'error',
+    message: err.message,
+    stack: process.env.NODE_ENV === 'production' ? undefined : err.stack, // Hide stack in prod
+    path: req.path,
+    method: req.method,
+    ip: req.ip
+  }));
   
+  // 2. Determine Status Code
   const statusCode = err.statusCode || 500;
+
+  // 3. Send Safe Response
   res.status(statusCode).json({
     status: 'error',
-    message: err.message || 'Internal Server Error'
+    message: statusCode === 500 && process.env.NODE_ENV === 'production' 
+      ? 'Internal Server Error' 
+      : err.message
   });
 });
 

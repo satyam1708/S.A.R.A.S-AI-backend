@@ -32,5 +32,6 @@ router.put(
   validate(validators.selectCourseSchema), 
   authController.selectCourse
 );
+router.post('/refresh-token', authController.refreshToken);
 
 export default router;
