@@ -7,6 +7,7 @@ import {
 } from "../../services/aiService.js";
 import prisma from "../../lib/prisma.js";
 import logger from "../../lib/logger.js"; // Enterprise Logger
+import https from 'https';
 
 // --- CONFIG ---
 const RSS_FEEDS = {
@@ -157,10 +158,19 @@ const deDuplicateArticles = (articles) => {
   return unique;
 };
 
-// --- DATA FETCHING ---
+// FIX: Create an Agent that is less strict about SSL (for older RSS feeds)
+const httpsAgent = new https.Agent({
+  rejectUnauthorized: false // WARNING: Use cautiously. Fixes "EPROTO" errors for some feeds.
+});
 
 const fetchFromRss = async (category = "general") => {
-  const parser = new Parser();
+  // FIX: Pass the agent to the parser
+  const parser = new Parser({
+    requestOptions: {
+      agent: httpsAgent 
+    }
+  });
+  
   const feedList = RSS_FEEDS[category] || RSS_FEEDS.general;
 
   const fetchPromises = feedList.map((feedInfo) =>
@@ -172,6 +182,7 @@ const fetchFromRss = async (category = "general") => {
           .filter(Boolean)
       )
       .catch((error) => {
+        // Just log warning, don't crash
         logger.warn(`RSS Fetch Failed [${feedInfo.url}]: ${error.message}`);
         return [];
       })

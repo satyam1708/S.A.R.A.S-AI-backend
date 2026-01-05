@@ -21,19 +21,21 @@ export const loginUser = async (req, res) => {
     const { email, password } = req.body;
     const { accessToken, refreshToken, user } = await AuthService.login(email, password);
     
-    // FIX: Set Refresh Token in HttpOnly Cookie
+    // FIX: Better Cookie Security Logic
+    const isProduction = process.env.NODE_ENV === 'production';
+    
     res.cookie('refreshToken', refreshToken, {
-      httpOnly: true,
-      secure: process.env.NODE_ENV === 'production', // True in prod (HTTPS)
-      sameSite: 'strict', // CSRF protection
+      httpOnly: true, // Prevents JS access (XSS protection)
+      secure: isProduction, // TRUE in prod (HTTPS), FALSE in dev (HTTP)
+      sameSite: isProduction ? 'strict' : 'lax', // 'lax' is better for local dev authentication
       maxAge: 7 * 24 * 60 * 60 * 1000 // 7 days
     });
 
     logger.info(`User logged in: ${email}`);
-    // Only send Access Token to client (Redux)
     res.json({ token: accessToken, user });
   } catch (error) {
-    // ... existing error handling
+    logger.warn(`Login Failed: ${error.message}`);
+    res.status(error.statusCode || 500).json({ message: error.message || 'Server error' });
   }
 };
 
