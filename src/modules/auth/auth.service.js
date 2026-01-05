@@ -2,7 +2,12 @@ import prisma from "../../lib/prisma.js";
 import bcrypt from "bcrypt";
 import jwt from "jsonwebtoken";
 
-const JWT_SECRET = process.env.JWT_SECRET || "defaultsecret";
+// --- SECURITY FIX ---
+// Check for secret immediately. If missing, crash the app on startup.
+if (!process.env.JWT_SECRET) {
+  throw new Error("FATAL: JWT_SECRET is not defined in .env file");
+}
+const JWT_SECRET = process.env.JWT_SECRET;
 
 // Helper for standardized errors
 class AppError extends Error {
