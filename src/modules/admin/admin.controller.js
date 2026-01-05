@@ -1,35 +1,29 @@
-// src/modules/admin/admin.controller.js
 import * as AdminService from "./admin.service.js";
-import { PDFExtract } from "pdf.js-extract";
+import pdfParse from "pdf-parse"; // Make sure to npm install pdf-parse
 import * as mammoth from "mammoth";
-import fs from "fs/promises";
-import path from "path";
-import os from "os";
-import logger from "../../lib/logger.js"; // Enterprise Logger
+import logger from "../../lib/logger.js"; 
 
 // --- Subjects ---
-export const createSubject = async (req, res) => {
+export const createSubject = async (req, res, next) => {
   try {
     const subject = await AdminService.createSubject(req.body.name);
     logger.info(`Subject created: ${subject.name} [ID: ${subject.id}]`);
     res.status(201).json(subject);
   } catch (error) {
-    logger.error(`Create Subject Failed: ${error.message}`);
-    res.status(500).json({ message: error.message });
+    next(error);
   }
 };
 
-export const getSubjects = async (req, res) => {
+export const getSubjects = async (req, res, next) => {
   try {
     const subjects = await AdminService.getAllSubjects();
     res.json(subjects);
   } catch (error) {
-    logger.error(`Get Subjects Failed: ${error.message}`);
-    res.status(500).json({ message: error.message });
+    next(error);
   }
 };
 
-export const updateSubject = async (req, res) => {
+export const updateSubject = async (req, res, next) => {
   try {
     const subject = await AdminService.updateSubject(
       parseInt(req.params.id),
@@ -37,47 +31,43 @@ export const updateSubject = async (req, res) => {
     );
     res.json(subject);
   } catch (error) {
-    logger.error(`Update Subject Failed: ${error.message}`);
-    res.status(500).json({ message: error.message });
+    next(error);
   }
 };
 
-export const deleteSubject = async (req, res) => {
+export const deleteSubject = async (req, res, next) => {
   try {
     await AdminService.deleteSubject(parseInt(req.params.id));
     logger.info(`Subject deleted: ${req.params.id}`);
     res.json({ message: "Subject deleted" });
   } catch (error) {
-    logger.error(`Delete Subject Failed: ${error.message}`);
-    res.status(500).json({ message: error.message });
+    next(error);
   }
 };
 
 // --- Chapters ---
-export const createChapter = async (req, res) => {
+export const createChapter = async (req, res, next) => {
   try {
     const { name, subjectId } = req.body;
     const chapter = await AdminService.createChapter(name, parseInt(subjectId));
     res.status(201).json(chapter);
   } catch (error) {
-    logger.error(`Create Chapter Failed: ${error.message}`);
-    res.status(500).json({ message: error.message });
+    next(error);
   }
 };
 
-export const getChaptersBySubject = async (req, res) => {
+export const getChaptersBySubject = async (req, res, next) => {
   try {
     const chapters = await AdminService.getChapters(
       parseInt(req.params.subjectId)
     );
     res.json(chapters);
   } catch (error) {
-    logger.error(`Get Chapters Failed: ${error.message}`);
-    res.status(500).json({ message: error.message });
+    next(error);
   }
 };
 
-export const updateChapter = async (req, res) => {
+export const updateChapter = async (req, res, next) => {
   try {
     const chapter = await AdminService.updateChapter(
       parseInt(req.params.id),
@@ -85,23 +75,21 @@ export const updateChapter = async (req, res) => {
     );
     res.json(chapter);
   } catch (error) {
-    logger.error(`Update Chapter Failed: ${error.message}`);
-    res.status(500).json({ message: error.message });
+    next(error);
   }
 };
 
-export const deleteChapter = async (req, res) => {
+export const deleteChapter = async (req, res, next) => {
   try {
     await AdminService.deleteChapter(parseInt(req.params.id));
     res.json({ message: "Chapter deleted" });
   } catch (error) {
-    logger.error(`Delete Chapter Failed: ${error.message}`);
-    res.status(500).json({ message: error.message });
+    next(error);
   }
 };
 
 // --- Topics ---
-export const createTopic = async (req, res) => {
+export const createTopic = async (req, res, next) => {
   try {
     const { name, subjectId, chapterId } = req.body;
     const topic = await AdminService.createTopic(
@@ -111,22 +99,20 @@ export const createTopic = async (req, res) => {
     );
     res.status(201).json(topic);
   } catch (error) {
-    logger.error(`Create Topic Failed: ${error.message}`);
-    res.status(500).json({ message: error.message });
+    next(error);
   }
 };
 
-export const getTopicsBySubject = async (req, res) => {
+export const getTopicsBySubject = async (req, res, next) => {
   try {
     const topics = await AdminService.getTopics(parseInt(req.params.subjectId));
     res.json(topics);
   } catch (error) {
-    logger.error(`Get Topics Failed: ${error.message}`);
-    res.status(500).json({ message: error.message });
+    next(error);
   }
 };
 
-export const updateTopic = async (req, res) => {
+export const updateTopic = async (req, res, next) => {
   try {
     const topic = await AdminService.updateTopic(
       parseInt(req.params.id),
@@ -134,34 +120,31 @@ export const updateTopic = async (req, res) => {
     );
     res.json(topic);
   } catch (error) {
-    logger.error(`Update Topic Failed: ${error.message}`);
-    res.status(500).json({ message: error.message });
+    next(error);
   }
 };
 
-export const deleteTopic = async (req, res) => {
+export const deleteTopic = async (req, res, next) => {
   try {
     await AdminService.deleteTopic(parseInt(req.params.id));
     res.json({ message: "Topic deleted" });
   } catch (error) {
-    logger.error(`Delete Topic Failed: ${error.message}`);
-    res.status(500).json({ message: error.message });
+    next(error);
   }
 };
 
 // --- Content Blocks ---
-export const addContentBlock = async (req, res) => {
+export const addContentBlock = async (req, res, next) => {
   try {
     const { topicId, content } = req.body;
     const block = await AdminService.addContent(parseInt(topicId), content);
     res.status(201).json(block);
   } catch (error) {
-    logger.error(`Add Content Failed: ${error.message}`);
-    res.status(500).json({ message: error.message });
+    next(error);
   }
 };
 
-export const updateContentBlock = async (req, res) => {
+export const updateContentBlock = async (req, res, next) => {
   try {
     const { content } = req.body;
     const block = await AdminService.updateContent(
@@ -170,67 +153,61 @@ export const updateContentBlock = async (req, res) => {
     );
     res.json(block);
   } catch (error) {
-    logger.error(`Update Content Failed: ${error.message}`);
-    res.status(500).json({ message: error.message });
+    next(error);
   }
 };
 
-export const getContentForTopic = async (req, res) => {
+export const getContentForTopic = async (req, res, next) => {
   try {
     const blocks = await AdminService.getContent(parseInt(req.params.topicId));
     res.json(blocks);
   } catch (error) {
-    logger.error(`Get Content Failed: ${error.message}`);
-    res.status(500).json({ message: error.message });
+    next(error);
   }
 };
 
-export const deleteContentBlock = async (req, res) => {
+export const deleteContentBlock = async (req, res, next) => {
   try {
     await AdminService.deleteContent(parseInt(req.params.blockId));
     res.status(200).json({ message: "Content block deleted" });
   } catch (error) {
-    logger.error(`Delete Content Failed: ${error.message}`);
-    res.status(500).json({ message: error.message });
+    next(error);
   }
 };
 
 // --- Quizzes ---
-export const generateQuizForTopic = async (req, res) => {
+export const generateQuizForTopic = async (req, res, next) => {
   try {
     const { topicId } = req.params;
     const quiz = await AdminService.generateQuiz(parseInt(topicId));
     res.status(201).json(quiz);
   } catch (error) {
-    logger.error(`Generate Quiz Failed: ${error.message}`);
-    res.status(500).json({ message: error.message });
+    next(error);
   }
 };
 
-export const getQuizzesForTopic = async (req, res) => {
+export const getQuizzesForTopic = async (req, res, next) => {
   try {
     const { topicId } = req.params;
     const quizzes = await AdminService.getQuizzesForTopic(parseInt(topicId));
     res.json(quizzes);
   } catch (error) {
-    logger.error(`Get Quizzes Failed: ${error.message}`);
-    res.status(500).json({ message: error.message });
+    next(error);
   }
 };
 
-export const deleteQuiz = async (req, res) => {
+export const deleteQuiz = async (req, res, next) => {
   try {
     const { quizId } = req.params;
     await AdminService.deleteQuiz(parseInt(quizId));
     res.status(200).json({ message: "Quiz deleted" });
   } catch (error) {
-    logger.error(`Delete Quiz Failed: ${error.message}`);
-    res.status(500).json({ message: error.message });
+    next(error);
   }
 };
 
-// --- File Upload (Non-Blocking) ---
-export const uploadBookContent = async (req, res) => {
+// --- File Upload (Enterprise: In-Memory Processing) ---
+export const uploadBookContent = async (req, res, next) => {
   const { topicId } = req.params;
   const file = req.file;
 
@@ -242,31 +219,29 @@ export const uploadBookContent = async (req, res) => {
     status: "PROCESSING",
   });
 
-  // 2. Process in Background
+  // 2. Process in Background (Serverless Safe)
   setImmediate(async () => {
-    let tempFilePath = "";
     try {
-      logger.info(`Starting background book upload for Topic ${topicId}`);
+      logger.info(`Starting in-memory book upload for Topic ${topicId}`);
       let fullText = "";
 
       if (file.mimetype === "application/pdf") {
-        tempFilePath = path.join(os.tmpdir(), `upload_${Date.now()}.pdf`);
-        await fs.writeFile(tempFilePath, file.buffer);
-        const pdfExtract = new PDFExtract();
-        const data = await pdfExtract.extract(tempFilePath);
-        fullText = data.pages
-          .map((page) => page.content.map((item) => item.str).join(" "))
-          .join("\n");
+        // FIX: Parse Buffer Directly (No disk writes)
+        const data = await pdfParse(file.buffer);
+        fullText = data.text;
       } else if (
         file.mimetype ===
         "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
       ) {
-        const { value } = await mammoth.default.extractRawText({
-          buffer: file.buffer,
-        });
+        const { value } = await mammoth.extractRawText({ buffer: file.buffer });
         fullText = value;
       } else {
         fullText = file.buffer.toString("utf-8");
+      }
+
+      if (!fullText.trim()) {
+        logger.warn(`Empty content extracted for Topic ${topicId}`);
+        return;
       }
 
       const count = await AdminService.processBookUpload(
@@ -278,10 +253,6 @@ export const uploadBookContent = async (req, res) => {
       
     } catch (error) {
       logger.error(`Background Upload Failed: ${error.message}`);
-    } finally {
-      if (tempFilePath) {
-        try { await fs.unlink(tempFilePath); } catch (e) {}
-      }
     }
   });
 };
