@@ -34,8 +34,6 @@ export const register = async (name, email, password) => {
   return newUser;
 };
 
-// ... imports
-import { v4 as uuidv4 } from "uuid"; // You might need 'npm install uuid'
 
 // FIX: Generate Token Pair (Access + Refresh)
 export const login = async (email, password) => {
