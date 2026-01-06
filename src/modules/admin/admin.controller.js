@@ -1,7 +1,11 @@
+import { createRequire } from "module";
 import * as AdminService from "./admin.service.js";
-import pdfParse from "pdf-parse"; // Make sure to npm install pdf-parse
-import * as mammoth from "mammoth";
-import logger from "../../lib/logger.js"; 
+import logger from "../../lib/logger.js";
+
+// Initialize require for CommonJS modules (pdf-parse, mammoth)
+const require = createRequire(import.meta.url);
+const pdfParse = require("pdf-parse");
+const mammoth = require("mammoth");
 
 // --- Subjects ---
 export const createSubject = async (req, res, next) => {
@@ -226,13 +230,14 @@ export const uploadBookContent = async (req, res, next) => {
       let fullText = "";
 
       if (file.mimetype === "application/pdf") {
-        // FIX: Parse Buffer Directly (No disk writes)
+        // Parse Buffer Directly using the required pdf-parse module
         const data = await pdfParse(file.buffer);
         fullText = data.text;
       } else if (
         file.mimetype ===
         "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
       ) {
+        // Use the required mammoth module
         const { value } = await mammoth.extractRawText({ buffer: file.buffer });
         fullText = value;
       } else {
@@ -248,9 +253,10 @@ export const uploadBookContent = async (req, res, next) => {
         parseInt(topicId),
         fullText
       );
-      
-      logger.info(`Background processing complete. Added ${count} blocks to Topic ${topicId}`);
-      
+
+      logger.info(
+        `Background processing complete. Added ${count} blocks to Topic ${topicId}`
+      );
     } catch (error) {
       logger.error(`Background Upload Failed: ${error.message}`);
     }
