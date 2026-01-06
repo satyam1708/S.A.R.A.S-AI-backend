@@ -90,7 +90,8 @@ export const generateQuizFromContent = async (context) => {
   return await withAIRetry(async () => {
     const result = await chatClient.chat.completions.create({
       messages,
-      max_tokens: 4000,
+      max_completion_tokens: 4000, // CHANGED from max_tokens
+      // temperature: 1, // o1 models often require temperature to be 1 or default
       response_format: { type: "json_object" },
     });
 
@@ -119,7 +120,7 @@ export const summarizeArticle = async (articleContent) => {
   return await withAIRetry(async () => {
     const result = await chatClient.chat.completions.create({
       messages,
-      max_tokens: 300,
+      max_completion_tokens: 300, // CHANGED from max_tokens
     });
     return result.choices[0].message.content;
   });
@@ -134,8 +135,8 @@ export const getChatCompletion = async (messages) => {
   return await withAIRetry(async () => {
     const result = await chatClient.chat.completions.create({
       messages,
-      max_tokens: 500,
-      temperature: 0.3,
+      max_completion_tokens: 500, // CHANGED from max_tokens
+      // temperature: 0.3, // o1 models usually do not support custom temperature
     });
     return result.choices[0].message.content;
   });
@@ -151,8 +152,8 @@ export const getChatCompletionStream = async (messages) => {
   try {
     return await chatClient.chat.completions.create({
       messages,
-      max_tokens: 800,
-      temperature: 0.3,
+      max_completion_tokens: 800, // CHANGED from max_tokens
+      // temperature: 0.3, // REMOVED/COMMENTED for o1 compatibility
       stream: true,
     });
   } catch (error) {
@@ -189,7 +190,7 @@ export const generateNewsBroadcast = async (
   return await withAIRetry(async () => {
     const result = await chatClient.chat.completions.create({
       messages: allMessages,
-      max_tokens: 1500,
+      max_completion_tokens: 1500, // CHANGED from max_tokens
     });
     return result.choices[0].message.content;
   });
@@ -215,8 +216,8 @@ export const chunkContentForLearning = async (fullText) => {
   const rawBlocks = await withAIRetry(async () => {
     const result = await chatClient.chat.completions.create({
       messages,
-      max_tokens: 4000,
-      temperature: 0,
+      max_completion_tokens: 4000, // CHANGED from max_tokens
+      // temperature: 0, // REMOVED for o1 compatibility
       response_format: { type: "json_object" },
     });
     const parsed = JSON.parse(cleanAIJSON(result.choices[0].message.content));
@@ -225,7 +226,7 @@ export const chunkContentForLearning = async (fullText) => {
     return parsed.blocks;
   });
 
-  // Post-Processing for consistent size
+  // Post-Processing... (No changes needed here)
   const normalized = [];
   for (let block of rawBlocks) {
     if (!block || typeof block !== "string") continue;
