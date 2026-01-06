@@ -1,6 +1,7 @@
 import { AzureOpenAI } from "openai";
 import logger from "../lib/logger.js";
 import { withAIRetry, cleanAIJSON } from "../utils/aiUtils.js";
+import { PROMPTS, PERSONA } from "../lib/prompts.js"; // Import Acharya Drona
 
 // =========================================================
 // 1. CONFIGURATION & CLIENT INITIALIZATION
@@ -16,18 +17,15 @@ const {
   AZURE_OPENAI_DALLE_DEPLOYMENT,
 } = process.env;
 
-// Initialize Clients
 let chatClient, embeddingClient, dalleClient;
 
-// A. Chat Client
+// --- A. Chat Client ---
 if (
   !AZURE_OPENAI_ENDPOINT ||
   !AZURE_OPENAI_KEY ||
   !AZURE_OPENAI_CHAT_DEPLOYMENT
 ) {
-  logger.error(
-    "❌ Azure Chat Config Missing (ENDPOINT, KEY, or CHAT_DEPLOYMENT)"
-  );
+  logger.error("❌ Azure Chat Config Missing");
 } else {
   chatClient = new AzureOpenAI({
     endpoint: AZURE_OPENAI_ENDPOINT,
@@ -37,7 +35,7 @@ if (
   });
 }
 
-// B. Embedding Client
+// --- B. Embedding Client ---
 if (
   !AZURE_OPENAI_EMBEDDING_ENDPOINT ||
   !AZURE_OPENAI_KEY ||
@@ -53,7 +51,7 @@ if (
   });
 }
 
-// C. DALL-E Client
+// --- C. DALL-E Client ---
 if (AZURE_OPENAI_DALLE_ENDPOINT && AZURE_OPENAI_KEY) {
   dalleClient = new AzureOpenAI({
     endpoint: AZURE_OPENAI_DALLE_ENDPOINT,
@@ -62,36 +60,44 @@ if (AZURE_OPENAI_DALLE_ENDPOINT && AZURE_OPENAI_KEY) {
     deployment: AZURE_OPENAI_DALLE_DEPLOYMENT,
   });
 } else {
-  logger.warn("⚠️ DALL-E Config Missing. Image generation will fail.");
+  logger.warn("⚠️ DALL-E Config Missing");
 }
 
 // =========================================================
-// 2. CORE AI SERVICE FUNCTIONS
+// 2. HELPER: FALLBACK STREAM
 // =========================================================
 
 /**
- * Generates a 10-question MCQ quiz from provided context.
- * Enforces strict JSON output.
+ * Creates a mock stream to gracefully handle errors in the UI
+ * without crashing the connection.
  */
+async function* createFallbackStream(errorMessage) {
+  const words = errorMessage.split(" ");
+  for (const word of words) {
+    yield {
+      choices: [{ delta: { content: word + " " } }],
+    };
+    // Slight delay to simulate typing
+    await new Promise((resolve) => setTimeout(resolve, 50));
+  }
+}
+
+// =========================================================
+// 3. CORE AI SERVICE FUNCTIONS
+// =========================================================
+
 export const generateQuizFromContent = async (context) => {
   if (!chatClient) throw new Error("AI chat client not initialized.");
 
   const messages = [
-    {
-      role: "system",
-      content: `You are an expert quiz creator for Indian government exams.
-      task: Generate 10 high-quality MCQs based on the provided context.
-      format: JSON Object ONLY. No markdown.
-      schema: { "quiz": [{ "questionText": "...", "options": ["A","B","C","D"], "correctAnswerIndex": 0 }] }`,
-    },
+    { role: "system", content: PROMPTS.QUIZ_GENERATION.system },
     { role: "user", content: `CONTEXT:\n${context}` },
   ];
 
   return await withAIRetry(async () => {
     const result = await chatClient.chat.completions.create({
       messages,
-      max_completion_tokens: 4000, // CHANGED from max_tokens
-      // temperature: 1, // o1 models often require temperature to be 1 or default
+      max_completion_tokens: 4000,
       response_format: { type: "json_object" },
     });
 
@@ -102,69 +108,76 @@ export const generateQuizFromContent = async (context) => {
   });
 };
 
-/**
- * Summarizes text for exam preparation.
- */
 export const summarizeArticle = async (articleContent) => {
   if (!chatClient) throw new Error("AI chat client not initialized.");
 
   const messages = [
-    {
-      role: "system",
-      content:
-        "You are an expert news analyst for UPSC/SSC aspirants. Summarize the article into 3-4 bullet points focusing on facts, figures, and policy implications. Tone: Formal & Academic.",
-    },
+    { role: "system", content: PROMPTS.NEWS_SUMMARY.system },
     { role: "user", content: articleContent },
   ];
 
   return await withAIRetry(async () => {
     const result = await chatClient.chat.completions.create({
       messages,
-      max_completion_tokens: 300, // CHANGED from max_tokens
+      max_completion_tokens: 500,
     });
     return result.choices[0].message.content;
   });
 };
 
-/**
- * Standard Chat Completion with Retry
- */
 export const getChatCompletion = async (messages) => {
   if (!chatClient) throw new Error("AI chat client not initialized.");
+
+  // Inject Persona if not present
+  if (messages.length > 0 && messages[0].role !== "system") {
+    messages.unshift({ role: "system", content: PERSONA.ACHARYA_DRONA });
+  }
 
   return await withAIRetry(async () => {
     const result = await chatClient.chat.completions.create({
       messages,
-      max_completion_tokens: 500, // CHANGED from max_tokens
-      // temperature: 0.3, // o1 models usually do not support custom temperature
+      max_completion_tokens: 800,
     });
     return result.choices[0].message.content;
   });
 };
 
 /**
- * Chat Stream (Note: Streams are harder to retry mid-flight,
- * but we retry the initial connection).
+ * ROBUST STREAM HANDLING
+ * Catches init errors and returns a polite fallback stream.
  */
 export const getChatCompletionStream = async (messages) => {
-  if (!chatClient) throw new Error("AI chat client not initialized.");
+  if (!chatClient) {
+    logger.error("AI Client not ready for stream");
+    return createFallbackStream(
+      "System Error: AI services are currently initializing. Please try again momentarily."
+    );
+  }
+
+  // Inject Persona
+  if (messages.length > 0 && messages[0].role !== "system") {
+    messages.unshift({ role: "system", content: PERSONA.ACHARYA_DRONA });
+  }
 
   try {
-    return await chatClient.chat.completions.create({
+    const stream = await chatClient.chat.completions.create({
       messages,
-      max_completion_tokens: 800, // CHANGED from max_tokens
-      // temperature: 0.3, // REMOVED/COMMENTED for o1 compatibility
+      max_completion_tokens: 1000,
       stream: true,
     });
+    return stream;
   } catch (error) {
-    logger.error(`Stream Init Failed: ${error.message}`);
-    throw error;
+    logger.error(
+      `Stream Init Failed (Graceful Fallback Triggered): ${error.message}`
+    );
+
+    // Return a safe, polite message stream so the UI doesn't crash
+    return createFallbackStream(
+      "Namaskar. High traffic is currently affecting my connection to the knowledge archives. Please wait a moment and ask again. (Service Busy)"
+    );
   }
 };
 
-/**
- * Generates a News Broadcast script based on Persona & Language
- */
 export const generateNewsBroadcast = async (
   articlesContent,
   category,
@@ -175,8 +188,8 @@ export const generateNewsBroadcast = async (
 
   const persona =
     language === "hi-IN"
-      ? `You are a formal news anchor for 'SarvaGyaan' (Hinglish). Start: "Namaskar vidyarthiyon...". End: "Dhanyavaad". Concise summaries.`
-      : `You are a professional news anchor for 'SarvaGyaan'. Start: "Welcome...". End: "Thank you". Concise summaries.`;
+      ? PROMPTS.NEWS_BROADCAST_HI
+      : PROMPTS.NEWS_BROADCAST_EN;
 
   const allMessages = [
     { role: "system", content: persona },
@@ -190,54 +203,40 @@ export const generateNewsBroadcast = async (
   return await withAIRetry(async () => {
     const result = await chatClient.chat.completions.create({
       messages: allMessages,
-      max_completion_tokens: 1500, // CHANGED from max_tokens
+      max_completion_tokens: 1500,
     });
     return result.choices[0].message.content;
   });
 };
 
-/**
- * Chunks text into learning blocks.
- * Robust post-processing included.
- */
 export const chunkContentForLearning = async (fullText) => {
   if (!chatClient) throw new Error("AI chat client not initialized.");
 
   const messages = [
-    {
-      role: "system",
-      content: `Split text into logical learning blocks (250-800 chars).
-      output: STRICT JSON.
-      schema: { "blocks": ["string1", "string2"] }`,
-    },
+    { role: "system", content: PROMPTS.CONTENT_CHUNKING.system },
     { role: "user", content: fullText },
   ];
 
   const rawBlocks = await withAIRetry(async () => {
     const result = await chatClient.chat.completions.create({
       messages,
-      max_completion_tokens: 4000, // CHANGED from max_tokens
-      // temperature: 0, // REMOVED for o1 compatibility
+      max_completion_tokens: 4000,
       response_format: { type: "json_object" },
     });
     const parsed = JSON.parse(cleanAIJSON(result.choices[0].message.content));
-    if (!parsed.blocks || !Array.isArray(parsed.blocks))
-      throw new Error("Invalid blocks format.");
-    return parsed.blocks;
+    return parsed.blocks || [];
   });
 
-  // Post-Processing... (No changes needed here)
+  // Normalize blocks
   const normalized = [];
   for (let block of rawBlocks) {
     if (!block || typeof block !== "string") continue;
     block = block.trim();
-    if (block.length < 30 || !isNaN(Number(block))) continue;
+    if (block.length < 30) continue;
 
     if (block.length > 900) {
       const parts = block.match(/.{1,700}(\s|$)/g) || [];
       normalized.push(...parts.map((p) => p.trim()));
-    } else if (block.length < 200 && normalized.length > 0) {
-      normalized[normalized.length - 1] += " " + block;
     } else {
       normalized.push(block);
     }
@@ -245,26 +244,18 @@ export const chunkContentForLearning = async (fullText) => {
   return normalized;
 };
 
-/**
- * Generates Flashcards (Q&A Pairs)
- */
 export const generateFlashcardsFromContent = async (context) => {
   if (!chatClient) throw new Error("AI chat client not initialized.");
 
   const messages = [
-    {
-      role: "system",
-      content: `Generate 5-10 factual flashcards for exam study.
-      format: JSON Object.
-      schema: { "flashcards": [{ "question": "...", "answer": "..." }] }`,
-    },
+    { role: "system", content: PROMPTS.FLASHCARDS.system },
     { role: "user", content: `CONTEXT:\n${context}` },
   ];
 
   return await withAIRetry(async () => {
     const result = await chatClient.chat.completions.create({
       messages,
-      max_tokens: 2000,
+      max_completion_tokens: 2000,
       response_format: { type: "json_object" },
     });
     const parsed = JSON.parse(cleanAIJSON(result.choices[0].message.content));
@@ -272,9 +263,6 @@ export const generateFlashcardsFromContent = async (context) => {
   });
 };
 
-/**
- * Generates Embeddings (Vectors)
- */
 export const getEmbedding = async (text) => {
   if (!embeddingClient) throw new Error("AI embedding client not initialized.");
 
@@ -284,20 +272,11 @@ export const getEmbedding = async (text) => {
   });
 };
 
-/**
- * Extracts questions from unstructured text (PDF/Docs)
- */
 export const parseQuestionsFromText = async (rawText, examSource) => {
   if (!chatClient) throw new Error("AI chat client not initialized.");
 
   const messages = [
-    {
-      role: "system",
-      content: `Extract MCQs from text. If answer is not marked, SOLVE it.
-      Assign 'subject' and 'difficulty' (EASY/MEDIUM/HARD).
-      format: JSON Object.
-      schema: { "questions": [{ "questionText": "...", "options": ["A","B","C","D"], "correctIndex": 0, "explanation": "...", "subject": "...", "difficulty": "MEDIUM" }] }`,
-    },
+    { role: "system", content: PROMPTS.EXTRACT_QUESTIONS.system },
     {
       role: "user",
       content: `Exam Source: ${examSource}\nText: ${rawText.substring(0, 12000)}`,
@@ -307,7 +286,7 @@ export const parseQuestionsFromText = async (rawText, examSource) => {
   return await withAIRetry(async () => {
     const result = await chatClient.chat.completions.create({
       messages,
-      max_tokens: 4000,
+      max_completion_tokens: 4000,
       response_format: { type: "json_object" },
     });
     const parsed = JSON.parse(cleanAIJSON(result.choices[0].message.content));
@@ -315,9 +294,6 @@ export const parseQuestionsFromText = async (rawText, examSource) => {
   });
 };
 
-/**
- * Generates General Awareness Questions from News
- */
 export const generateCurrentAffairsQuestions = async (
   newsArticles,
   count = 5
@@ -329,13 +305,7 @@ export const generateCurrentAffairsQuestions = async (
     .join("\n");
 
   const messages = [
-    {
-      role: "system",
-      content: `Generate ${count} MCQs based STRICTLY on the news provided.
-      Focus: Appointments, Awards, Schemes, Sports.
-      format: JSON Object.
-      schema: { "questions": [{ "questionText": "...", "options": [], "correctIndex": 0, "explanation": "..." }] }`,
-    },
+    { role: "system", content: PROMPTS.CURRENT_AFFAIRS.system },
     { role: "user", content: `News Context:\n${context}` },
   ];
 
@@ -343,7 +313,7 @@ export const generateCurrentAffairsQuestions = async (
     return await withAIRetry(async () => {
       const result = await chatClient.chat.completions.create({
         messages,
-        max_tokens: 3000,
+        max_completion_tokens: 3000,
         response_format: { type: "json_object" },
       });
       const parsed = JSON.parse(cleanAIJSON(result.choices[0].message.content));
@@ -351,13 +321,10 @@ export const generateCurrentAffairsQuestions = async (
     });
   } catch (error) {
     logger.error(`CA Gen Failed: ${error.message}`);
-    return []; // Return empty array so the main process doesn't crash
+    return [];
   }
 };
 
-/**
- * Generates Post-Exam Analysis
- */
 export const generateExamAnalysis = async (
   score,
   totalMarks,
@@ -367,12 +334,7 @@ export const generateExamAnalysis = async (
   if (!chatClient) return null;
 
   const messages = [
-    {
-      role: "system",
-      // FIX: Added "Output STRICT JSON"
-      content: `Analyze student performance. Output STRICT JSON.
-      schema: { "summary": "...", "strengths": [], "weaknesses": [], "actionPlan": "..." }`,
-    },
+    { role: "system", content: PROMPTS.EXAM_ANALYSIS.system },
     {
       role: "user",
       content: `Score: ${score}/${totalMarks}, Weak Topics: ${weakTopics.join(",")}, Time: ${timeSpent}s`,
@@ -383,7 +345,7 @@ export const generateExamAnalysis = async (
     return await withAIRetry(async () => {
       const result = await chatClient.chat.completions.create({
         messages,
-        max_tokens: 1000,
+        max_completion_tokens: 1000,
         response_format: { type: "json_object" },
       });
       return JSON.parse(cleanAIJSON(result.choices[0].message.content));
@@ -394,45 +356,27 @@ export const generateExamAnalysis = async (
   }
 };
 
-/**
- * Generates Daily English Dose
- */
 export const generateEnglishDose = async () => {
   if (!chatClient) throw new Error("AI chat client not initialized.");
 
   const messages = [
-    {
-      role: "system",
-      // FIX: Added "Output STRICT JSON"
-      content: `Generate English Learning content. Output STRICT JSON.
-      schema: { 
-        "vocabulary": [{ "word": "...", "meaning": "...", "synonyms": [], "antonyms": [], "sentence": "..." }],
-        "idiom": { "phrase": "...", "meaning": "...", "sentence": "..." },
-        "grammar": { "title": "...", "rule": "...", "example": "..." },
-        "root": { "word": "...", "meaning": "...", "examples": [] },
-        "quiz": { "question": "...", "options": [], "correctIndex": 0, "explanation": "..." }
-      }`,
-    },
+    { role: "system", content: PROMPTS.ENGLISH_DOSE.system },
     { role: "user", content: "Generate today's English dose." },
   ];
 
   return await withAIRetry(async () => {
     const result = await chatClient.chat.completions.create({
       messages,
-      max_tokens: 2500,
+      max_completion_tokens: 2500,
       response_format: { type: "json_object" },
     });
     return JSON.parse(cleanAIJSON(result.choices[0].message.content));
   });
 };
 
-/**
- * Generates Educational Images (DALL-E)
- */
 export const generateEducationalImage = async (prompt) => {
   if (!dalleClient) throw new Error("DALL-E client not initialized.");
 
-  // Image gen usually doesn't throw 429 as often, but safe to wrap
   return await withAIRetry(async () => {
     const result = await dalleClient.images.generate({
       model: AZURE_OPENAI_DALLE_DEPLOYMENT,
@@ -446,9 +390,6 @@ export const generateEducationalImage = async (prompt) => {
   });
 };
 
-/**
- * Generates Questions specifically based on Syllabus/Course Name
- */
 export const generateQuestionsFromSyllabus = async (
   courseName,
   subjectName,
@@ -459,11 +400,11 @@ export const generateQuestionsFromSyllabus = async (
   const messages = [
     {
       role: "system",
-      // FIX: Added "Output STRICT JSON" to satisfy API requirements
-      content: `Generate ${count} MCQs for ${subjectName} (${courseName}).
-      Difficulty: Mixed (Easy/Medium/Hard).
-      Output STRICT JSON.
-      schema: { "questions": [{ "questionText": "...", "options": [], "correctIndex": 0, "explanation": "...", "difficulty": "MEDIUM" }] }`,
+      content: PROMPTS.SYLLABUS_QUESTIONS.system(
+        subjectName,
+        courseName,
+        count
+      ),
     },
     { role: "user", content: "Generate questions." },
   ];
@@ -472,7 +413,7 @@ export const generateQuestionsFromSyllabus = async (
     return await withAIRetry(async () => {
       const result = await chatClient.chat.completions.create({
         messages,
-        max_tokens: 3500,
+        max_completion_tokens: 3500,
         response_format: { type: "json_object" },
       });
       const parsed = JSON.parse(cleanAIJSON(result.choices[0].message.content));
