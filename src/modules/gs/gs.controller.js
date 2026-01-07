@@ -222,3 +222,12 @@ export const generateImage = async (req, res, next) => {
     next(error);
   }
 };
+export const getKnowledgeGraph = async (req, res, next) => {
+  try {
+    const graphData = await GsService.getKnowledgeGraph(req.user.id);
+    res.json(graphData);
+  } catch (error) {
+    logger.error(`Knowledge Graph Error: ${error.message}`);
+    next(error);
+  }
+};

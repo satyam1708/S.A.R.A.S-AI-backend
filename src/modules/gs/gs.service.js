@@ -476,3 +476,32 @@ export const reviewFlashcard = async (userId, flashcardId, rating) => {
     },
   });
 };
+
+export const getKnowledgeGraph = async (userId) => {
+  return prisma.subject.findMany({
+    include: {
+      chapters: {
+        include: {
+          topics: {
+            include: {
+              learnedBy: {
+                where: { userId: userId },
+                select: { hasLearned: true }
+              }
+            }
+          }
+        }
+      },
+      // Also include topics that aren't in a chapter
+      topics: {
+        where: { chapterId: null },
+        include: {
+          learnedBy: {
+            where: { userId: userId },
+            select: { hasLearned: true }
+          }
+        }
+      }
+    }
+  });
+};

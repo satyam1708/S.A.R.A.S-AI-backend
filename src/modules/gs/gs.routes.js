@@ -90,5 +90,5 @@ gsRouter.post(
   validate(validators.imageGenSchema),
   GsController.generateImage
 );
-
+gsRouter.get('/knowledge-graph', authMiddleware, GsController.getKnowledgeGraph);
 export default gsRouter;
