@@ -231,3 +231,14 @@ export const getKnowledgeGraph = async (req, res, next) => {
     next(error);
   }
 };
+
+export const getOfflineContext = async (req, res, next) => {
+  try {
+    const { topicId } = req.params;
+    const context = await GsService.getTopicContentForOffline(parseInt(topicId));
+    res.json({ context });
+  } catch (error) {
+    logger.error(`Offline Context Fetch Failed: ${error.message}`);
+    next(error);
+  }
+};

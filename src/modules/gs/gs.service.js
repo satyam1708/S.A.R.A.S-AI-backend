@@ -505,3 +505,20 @@ export const getKnowledgeGraph = async (userId) => {
     }
   });
 };
+
+
+export const getTopicContentForOffline = async (topicId) => {
+  const topic = await prisma.topic.findUnique({
+    where: { id: topicId },
+    include: { 
+      content: {
+        select: { content: true } 
+      } 
+    }
+  });
+
+  if (!topic) return "";
+
+  // Combine all content blocks into one large context string for the LLM
+  return topic.content.map((b) => b.content).join("\n\n");
+};

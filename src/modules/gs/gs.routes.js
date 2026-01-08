@@ -91,4 +91,11 @@ gsRouter.post(
   GsController.generateImage
 );
 gsRouter.get('/knowledge-graph', authMiddleware, GsController.getKnowledgeGraph);
+
+gsRouter.get(
+  '/context/:topicId',
+  authMiddleware,
+  validate(validators.getTopicSchema),
+  GsController.getOfflineContext
+);
 export default gsRouter;
