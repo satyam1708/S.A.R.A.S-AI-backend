@@ -512,12 +512,15 @@ export const getTopicContentForOffline = async (topicId) => {
     where: { id: topicId },
     include: { 
       content: {
-        select: { content: true } 
+        select: { content: true },
+        orderBy: { id: 'asc' } // Ensure logical reading order
       } 
     }
   });
 
-  if (!topic) return "";
+  if (!topic || !topic.content || topic.content.length === 0) {
+    return ""; // Return empty string if no content
+  }
 
   // Combine all content blocks into one large context string for the LLM
   return topic.content.map((b) => b.content).join("\n\n");
