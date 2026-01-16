@@ -1,8 +1,9 @@
 {
-  "name": "thesarvanews_backend",
+  "name": "s.a.r.a.s-ai-backend",
   "version": "1.0.0",
   "main": "index.js",
   "type": "module",
+  "description": "SARAS AI Backend API",
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1",
     "dev": "nodemon src/app.js",

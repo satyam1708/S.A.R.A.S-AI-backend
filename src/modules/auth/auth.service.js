@@ -2,10 +2,15 @@ import prisma from "../../lib/prisma.js";
 import bcrypt from "bcrypt";
 import jwt from "jsonwebtoken";
 import { v4 as uuidv4 } from "uuid";
+import dotenv from "dotenv";
+
+// Load environment variables
+dotenv.config();
 
 // --- SECURITY FIX ---
 // Check for secret immediately. If missing, crash the app on startup.
 if (!process.env.JWT_SECRET) {
+  console.log(process.env);
   throw new Error("FATAL: JWT_SECRET is not defined in .env file");
 }
 const JWT_SECRET = process.env.JWT_SECRET;

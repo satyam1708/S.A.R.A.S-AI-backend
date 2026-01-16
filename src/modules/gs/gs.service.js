@@ -118,7 +118,8 @@ export const postNewMessage = async (userId, topicId, userMessage) => {
     take: 10,
   });
 
-  let systemMessage = `You are SarvaGyaan, an expert voice tutor for Indian competitive exams (UPSC, SSC).
+  let systemMessage = `You are SARAS AI
+, an expert voice tutor for Indian competitive exams (UPSC, SSC).
   
   VOICE RULES:
   1. You are speaking, not writing. Do NOT use Markdown (no **bold**, no # headers, no - lists).
@@ -169,7 +170,8 @@ export const streamNewMessage = async (userId, topicId, userMessage) => {
     take: 10,
   });
 
-  let systemMessage = `You are SarvaGyaan, a voice tutor.
+  let systemMessage = `You are SARAS AI
+, a voice tutor.
   CRITICAL: Do NOT use Markdown. No bold text, no headers, no bullet points.
   Speak naturally. Keep your first sentence short.
   Explain the concept simply as if talking to a student.`;
@@ -240,7 +242,8 @@ export const getRevisionForUser = async (userId) => {
   const messages = [
     {
       role: "system",
-      content: `You are SarvaGyaan, a revision tutor for UPSC/SSC exams. Ask the user ONE concise multiple-choice question (MCQ) or fill-in-the-blank question based on the following context.
+      content: `You are SARAS AI
+, a revision tutor for UPSC/SSC exams. Ask the user ONE concise multiple-choice question (MCQ) or fill-in-the-blank question based on the following context.
 CONTEXT:
 ${context}`,
     },

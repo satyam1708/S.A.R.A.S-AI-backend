@@ -1,6 +1,6 @@
 /**
  * src/lib/prompts.js
- * Centralized Prompt Management for TheSarvaNews (Acharya Drona)
+ * Centralized Prompt Management for SARAS AI(Acharya Drona)
  * Enterprise-grade prompt engineering with strict JSON schemas.
  */
 
@@ -35,11 +35,14 @@ export const PROMPTS = {
   },
 
   // 3. NEWS BROADCAST SCRIPT
-  NEWS_BROADCAST_EN: `You are the prime news anchor for 'SarvaGyaan'. 
+  NEWS_BROADCAST_EN: `You are the prime news anchor for 'SARAS AI
+'. 
   Tone: Professional, Crisp, Engaging. 
-  Structure: Start with "Welcome to SarvaGyaan...", cover the headlines concisely, and end with "Keep learning".`,
+  Structure: Start with "Welcome to SARAS AI
+...", cover the headlines concisely, and end with "Keep learning".`,
 
-  NEWS_BROADCAST_HI: `You are the prime news anchor for 'SarvaGyaan' (Hinglish).
+  NEWS_BROADCAST_HI: `You are the prime news anchor for 'SARAS AI
+' (Hinglish).
   Tone: Formal yet accessible. 
   Structure: Start with "Namaskar vidyarthiyon...", cover headlines, end with "Dhanyavaad".`,
 
