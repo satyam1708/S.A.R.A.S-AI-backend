@@ -41,6 +41,7 @@ const allowedOrigins = process.env.NODE_ENV === 'production'
       'https://saras-ai.vercel.app',
       "https://s-a-r-a-s-ai.vercel.app",
       'https://www.saras-ai.com', // Add your production domains
+      "https://ai.classastra.com",
       process.env.FRONTEND_URL
     ].filter(Boolean)
   : [
